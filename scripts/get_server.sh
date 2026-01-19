@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# Get Server JAR (Universal - All Versions)
+# Get Server JAR - Universal v2.1
 # Supports: paper, vanilla, fabric, purpur
 # ============================================
 
@@ -11,55 +11,59 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 mkdir -p "$MCSERVER_DIR/cache" "$MCSERVER_DIR/plugins"
 
+echo "   Tipo: $SERVER_TYPE | Versão: $VERSION"
+
+# ============================================
 # Baixar Playit Plugin
+# ============================================
 PLAYIT_URL="https://github.com/playit-cloud/playit-minecraft-plugin/releases/latest/download/playit-minecraft-plugin.jar"
 if [ ! -f "$MCSERVER_DIR/plugins/playit-minecraft-plugin.jar" ]; then
     echo "   Baixando Playit Plugin..."
     wget -q -O "$MCSERVER_DIR/plugins/playit-minecraft-plugin.jar" "$PLAYIT_URL"
 fi
 
-# Criar eula.txt
 echo "eula=true" > "$MCSERVER_DIR/eula.txt"
 
 # ============================================
-# Função: Baixar PaperMC
+# Função: Tentar versões próximas do Paper
 # ============================================
-download_paper() {
+try_paper_versions() {
     local ver="$1"
     local dest="$2"
     
-    echo "   Consultando API do PaperMC para $ver..."
+    # Lista de versões a tentar (original + fallbacks)
+    local versions_to_try="$ver"
     
-    # Buscar builds disponíveis
-    local api_response=$(curl -s "https://api.papermc.io/v2/projects/paper/versions/$ver")
-    
-    # Verificar se versão existe
-    if echo "$api_response" | grep -q '"error"'; then
-        echo "   ❌ Versão $ver não encontrada no PaperMC!"
-        return 1
+    # Para 1.8.9, tentar também 1.8.8
+    if [ "$ver" = "1.8.9" ]; then
+        versions_to_try="1.8.9 1.8.8"
+    fi
+    # Para 1.21.x que não existe, tentar versões anteriores
+    if echo "$ver" | grep -q "^1\.21\."; then
+        versions_to_try="$ver 1.21.4 1.21.3 1.21.1 1.21"
     fi
     
-    # Extrair último build (método robusto sem jq)
-    local build=$(echo "$api_response" | grep -o '"builds":\[[^]]*\]' | grep -o '[0-9]*' | tail -1)
+    for try_ver in $versions_to_try; do
+        echo "   Tentando Paper $try_ver..."
+        local api_response=$(curl -s "https://api.papermc.io/v2/projects/paper/versions/$try_ver" 2>/dev/null)
+        
+        if echo "$api_response" | grep -q '"builds"'; then
+            local build=$(echo "$api_response" | grep -o '"builds":\[[^]]*\]' | grep -o '[0-9]*' | tail -1)
+            
+            if [ -n "$build" ]; then
+                echo "   ✓ Encontrado: Paper $try_ver build $build"
+                local jar_url="https://api.papermc.io/v2/projects/paper/versions/$try_ver/builds/$build/downloads/paper-$try_ver-$build.jar"
+                wget -q --show-progress -O "$dest/paper.jar" "$jar_url"
+                
+                if [ -s "$dest/paper.jar" ]; then
+                    echo "$try_ver" > "$dest/.paper_version"
+                    return 0
+                fi
+            fi
+        fi
+    done
     
-    if [ -z "$build" ]; then
-        echo "   ❌ Não foi possível encontrar builds para $ver"
-        return 1
-    fi
-    
-    echo "   Build encontrado: $build"
-    
-    # Baixar JAR
-    local jar_url="https://api.papermc.io/v2/projects/paper/versions/$ver/builds/$build/downloads/paper-$ver-$build.jar"
-    echo "   Baixando: paper-$ver-$build.jar"
-    wget -q --show-progress -O "$dest/paper.jar" "$jar_url"
-    
-    if [ ! -s "$dest/paper.jar" ]; then
-        echo "   ❌ Download falhou!"
-        return 1
-    fi
-    
-    return 0
+    return 1
 }
 
 # ============================================
@@ -69,8 +73,14 @@ download_vanilla() {
     local ver="$1"
     local dest="$2"
     
-    echo "   Baixando Vanilla $ver via manifest Mojang..."
+    echo "   Baixando Vanilla $ver..."
     python3 "$SCRIPT_DIR/download_vanilla.py" "$ver" "$dest"
+    
+    if [ -f "$dest/minecraft_server.$ver.jar" ]; then
+        cp "$dest/minecraft_server.$ver.jar" "$MCSERVER_DIR/server.jar"
+        return 0
+    fi
+    return 1
 }
 
 # ============================================
@@ -80,29 +90,47 @@ download_fabric() {
     local ver="$1"
     local dest="$2"
     
-    echo "   Consultando API do Fabric..."
+    echo "   Consultando Fabric API..."
     
-    # Pegar última versão do loader
-    local loader=$(curl -s "https://meta.fabricmc.net/v2/versions/loader" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
-    local installer=$(curl -s "https://meta.fabricmc.net/v2/versions/installer" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+    # Verificar se a versão existe no Fabric (pattern com espaços)
+    local game_versions=$(curl -s "https://meta.fabricmc.net/v2/versions/game" 2>/dev/null)
+    if ! echo "$game_versions" | grep -q "\"version\": \"$ver\""; then
+        echo "   ⚠️ Fabric não suporta $ver exatamente"
+        # Tentar versão mais próxima
+        local similar=$(echo "$game_versions" | grep -o "\"version\": \"${ver%.*}\.[0-9]*\"" | head -1 | cut -d'"' -f4)
+        if [ -n "$similar" ]; then
+            echo "   ℹ️ Versão similar encontrada: $similar"
+            ver="$similar"
+        else
+            return 1
+        fi
+    fi
+    
+    local loader=$(curl -s "https://meta.fabricmc.net/v2/versions/loader" 2>/dev/null | grep -o '"version": "[^"]*"' | head -1 | cut -d'"' -f4)
+    local installer=$(curl -s "https://meta.fabricmc.net/v2/versions/installer" 2>/dev/null | grep -o '"version": "[^"]*"' | head -1 | cut -d'"' -f4)
+    
+    # Fallback para formato sem espaço
+    if [ -z "$loader" ]; then
+        loader=$(curl -s "https://meta.fabricmc.net/v2/versions/loader" 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+    fi
+    if [ -z "$installer" ]; then
+        installer=$(curl -s "https://meta.fabricmc.net/v2/versions/installer" 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+    fi
     
     if [ -z "$loader" ] || [ -z "$installer" ]; then
-        echo "   ❌ Não foi possível obter versões do Fabric"
+        echo "   ❌ Erro ao obter versões Fabric"
         return 1
     fi
     
-    echo "   Loader: $loader, Installer: $installer"
+    echo "   Loader: $loader | Installer: $installer"
     
     local jar_url="https://meta.fabricmc.net/v2/versions/loader/$ver/$loader/$installer/server/jar"
-    wget -q --show-progress -O "$dest/fabric-server.jar" "$jar_url"
+    wget -q --show-progress -O "$dest/server.jar" "$jar_url"
     
-    if [ ! -s "$dest/fabric-server.jar" ]; then
-        echo "   ❌ Download do Fabric falhou!"
-        return 1
+    if [ -s "$dest/server.jar" ]; then
+        return 0
     fi
-    
-    mv "$dest/fabric-server.jar" "$dest/server.jar"
-    return 0
+    return 1
 }
 
 # ============================================
@@ -112,65 +140,55 @@ download_purpur() {
     local ver="$1"
     local dest="$2"
     
-    echo "   Consultando API do Purpur..."
+    echo "   Consultando Purpur API..."
     
-    local api_response=$(curl -s "https://api.purpurmc.org/v2/purpur/$ver")
+    local api_response=$(curl -s "https://api.purpurmc.org/v2/purpur/$ver" 2>/dev/null)
     
     if echo "$api_response" | grep -q '"error"'; then
-        echo "   ❌ Versão $ver não encontrada no Purpur!"
+        echo "   ⚠️ Purpur não suporta $ver"
         return 1
     fi
     
     local build=$(echo "$api_response" | grep -o '"latest":"[^"]*"' | cut -d'"' -f4)
     
     if [ -z "$build" ]; then
-        echo "   ❌ Não foi possível encontrar builds para $ver"
+        echo "   ❌ Build não encontrado"
         return 1
     fi
     
     echo "   Build: $build"
+    wget -q --show-progress -O "$dest/server.jar" "https://api.purpurmc.org/v2/purpur/$ver/$build/download"
     
-    local jar_url="https://api.purpurmc.org/v2/purpur/$ver/$build/download"
-    wget -q --show-progress -O "$dest/purpur.jar" "$jar_url"
-    
-    if [ ! -s "$dest/purpur.jar" ]; then
-        echo "   ❌ Download do Purpur falhou!"
-        return 1
+    if [ -s "$dest/server.jar" ]; then
+        return 0
     fi
-    
-    mv "$dest/purpur.jar" "$dest/server.jar"
-    return 0
+    return 1
 }
 
 # ============================================
 # Lógica Principal
 # ============================================
 
-echo "   Tipo de servidor: $SERVER_TYPE"
+# Verificar versão numérica
+MAJOR=$(echo "$VERSION" | cut -d. -f1)
+MINOR=$(echo "$VERSION" | cut -d. -f2)
+VERSION_NUM=$((MAJOR * 100 + MINOR))
 
 case "$SERVER_TYPE" in
     paper)
-        if download_paper "$VERSION" "$MCSERVER_DIR"; then
-            # Verificar se precisa patch local (versões antigas < 1.12)
-            # Extrair major.minor como número (ex: 1.8 -> 18, 1.12 -> 112, 1.21 -> 121)
-            MAJOR=$(echo "$VERSION" | cut -d. -f1)
-            MINOR=$(echo "$VERSION" | cut -d. -f2)
-            VERSION_NUM=$((MAJOR * 100 + MINOR))
+        if try_paper_versions "$VERSION" "$MCSERVER_DIR"; then
+            ACTUAL_VERSION=$(cat "$MCSERVER_DIR/.paper_version" 2>/dev/null || echo "$VERSION")
             
+            # Patch para versões antigas
             if [ "$VERSION_NUM" -lt 112 ]; then
-                echo "   ⚠️  Versão antiga (<1.12). Aplicando patch local..."
-                
-                # Baixar vanilla server
-                download_vanilla "$VERSION" "$MCSERVER_DIR/cache"
-                
-                # Rodar PaperClip para gerar o jar patcheado
+                echo "   ⚠️ Versão antiga. Patch local..."
+                download_vanilla "$ACTUAL_VERSION" "$MCSERVER_DIR/cache"
                 cd "$MCSERVER_DIR"
-                timeout 30 java -jar paper.jar >/dev/null 2>&1 || true
+                timeout 60 java -jar paper.jar >/dev/null 2>&1 || true
                 
-                # Usar o jar patcheado
                 if [ -f "cache/patched.jar" ]; then
                     mv cache/patched.jar server.jar
-                    echo "   ✅ Patch aplicado com sucesso!"
+                    echo "   ✓ Patch aplicado"
                 else
                     mv paper.jar server.jar
                 fi
@@ -178,36 +196,39 @@ case "$SERVER_TYPE" in
                 mv "$MCSERVER_DIR/paper.jar" "$MCSERVER_DIR/server.jar"
             fi
         else
-            echo "   ⚠️  Fallback para Vanilla..."
+            echo "   ⚠️ Paper indisponível. Fallback para Vanilla..."
             download_vanilla "$VERSION" "$MCSERVER_DIR/cache"
-            cp "$MCSERVER_DIR/cache/minecraft_server.$VERSION.jar" "$MCSERVER_DIR/server.jar"
         fi
         ;;
     
     vanilla)
-        download_vanilla "$VERSION" "$MCSERVER_DIR/cache"
-        cp "$MCSERVER_DIR/cache/minecraft_server.$VERSION.jar" "$MCSERVER_DIR/server.jar"
+        download_vanilla "$VERSION" "$MCSERVER_DIR/cache" || exit 1
         ;;
     
     fabric)
         if ! download_fabric "$VERSION" "$MCSERVER_DIR"; then
-            echo "   ❌ Fabric falhou. Abortando."
+            echo "   ❌ Fabric não disponível para $VERSION"
             exit 1
         fi
         ;;
     
     purpur)
         if ! download_purpur "$VERSION" "$MCSERVER_DIR"; then
-            echo "   ❌ Purpur falhou. Abortando."
+            echo "   ❌ Purpur não disponível para $VERSION"
             exit 1
         fi
         ;;
     
     *)
-        echo "   ❌ Tipo de servidor desconhecido: $SERVER_TYPE"
-        echo "   Tipos suportados: paper, vanilla, fabric, purpur"
+        echo "   ❌ Tipo desconhecido: $SERVER_TYPE"
+        echo "   Suportados: paper, vanilla, fabric, purpur"
         exit 1
         ;;
 esac
 
-echo "   ✅ Servidor $SERVER_TYPE $VERSION pronto."
+if [ -f "$MCSERVER_DIR/server.jar" ]; then
+    echo "   ✅ $SERVER_TYPE pronto!"
+else
+    echo "   ❌ Falha ao preparar servidor"
+    exit 1
+fi
