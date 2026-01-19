@@ -179,18 +179,48 @@ case "$SERVER_TYPE" in
         if try_paper_versions "$VERSION" "$MCSERVER_DIR"; then
             ACTUAL_VERSION=$(cat "$MCSERVER_DIR/.paper_version" 2>/dev/null || echo "$VERSION")
             
-            # Patch para versões antigas
-            if [ "$VERSION_NUM" -lt 112 ]; then
-                echo "   ⚠️ Versão antiga. Patch local..."
-                download_vanilla "$ACTUAL_VERSION" "$MCSERVER_DIR/cache"
-                cd "$MCSERVER_DIR"
-                timeout 60 java -jar paper.jar >/dev/null 2>&1 || true
+            # Patch local para versões antes de 1.18 (Java agent não funciona no Android)
+            if [ "$VERSION_NUM" -lt 118 ]; then
+                echo "   ⚠️ Versão pré-1.18. Aplicando patch local (Android não suporta Java Agent)..."
                 
+                # Criar diretório cache se necessário
+                mkdir -p "$MCSERVER_DIR/cache"
+                
+                # Para versões muito antigas (< 1.12), baixar vanilla primeiro (URL quebrada no paperclip)
+                if [ "$VERSION_NUM" -lt 112 ]; then
+                    echo "   ⬇️ Baixando vanilla server (necessário para 1.8.x-1.11.x)..."
+                    python3 "$SCRIPT_DIR/download_vanilla.py" "$ACTUAL_VERSION" "$MCSERVER_DIR/cache"
+                    
+                    # Renomear para o formato esperado pelo paperclip
+                    if [ -f "$MCSERVER_DIR/cache/minecraft_server.$ACTUAL_VERSION.jar" ]; then
+                        mv "$MCSERVER_DIR/cache/minecraft_server.$ACTUAL_VERSION.jar" "$MCSERVER_DIR/cache/minecraft_server.jar"
+                    fi
+                fi
+                
+                # Rodar PaperClip localmente para gerar o jar patcheado
+                cd "$MCSERVER_DIR"
+                echo "   Executando PaperClip (pode demorar ~30s)..."
+                timeout 120 java -jar paper.jar >/dev/null 2>&1 || true
+                
+                # Verificar se gerou o patched jar (diferentes versões usam nomes diferentes)
                 if [ -f "cache/patched.jar" ]; then
                     mv cache/patched.jar server.jar
-                    echo "   ✓ Patch aplicado"
-                else
+                    rm -f paper.jar
+                    echo "   ✓ Patch aplicado (cache/patched.jar)"
+                elif ls cache/patched_*.jar 1>/dev/null 2>&1; then
+                    # Paper 1.8.x gera patched_X.X.X.jar
+                    mv cache/patched_*.jar server.jar
+                    rm -f paper.jar
+                    echo "   ✓ Patch aplicado (patched_*.jar)"
+                elif ls cache/mojang_*.jar 1>/dev/null 2>&1; then
+                    # Algumas versões geram mojang_*.jar (o vanilla baixado)
+                    # Neste caso usamos o paper.jar que já foi patcheado
                     mv paper.jar server.jar
+                    echo "   ✓ Patch aplicado (paper.jar patcheado)"
+                else
+                    # Se não gerou nada reconhecível, mover o paper.jar
+                    mv paper.jar server.jar
+                    echo "   ⚠️ Usando paper.jar direto (patch pode falhar)"
                 fi
             else
                 mv "$MCSERVER_DIR/paper.jar" "$MCSERVER_DIR/server.jar"
@@ -230,5 +260,10 @@ if [ -f "$MCSERVER_DIR/server.jar" ]; then
     echo "   ✅ $SERVER_TYPE pronto!"
 else
     echo "   ❌ Falha ao preparar servidor"
+    echo "   Motivo: server.jar não foi criado em $MCSERVER_DIR"
+    echo "   Arquivos disponíveis:"
+    ls -la "$MCSERVER_DIR"/*.jar 2>/dev/null || echo "      Nenhum .jar encontrado"
+    echo "   Cache:"
+    ls -la "$MCSERVER_DIR/cache/"*.jar 2>/dev/null || echo "      Nenhum .jar no cache"
     exit 1
 fi

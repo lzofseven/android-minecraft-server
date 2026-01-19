@@ -83,6 +83,17 @@ echo "   Pressione Ctrl+C para parar"
 echo ""
 echo "============================================"
 
+# Criar tmp directory no device
+adb shell "mkdir -p /data/local/tmp/mcserver/tmp"
+
+# Java agent pode falhar em versões intermediárias
+JAVA_OPTS="-Xmx$MEMORY -Djava.io.tmpdir=./tmp"
+
+# Desabilitar java agent para versões que têm problema
+if [ "$VERSION_NUM" -lt 118 ] && [ "$VERSION_NUM" -ge 112 ]; then
+    JAVA_OPTS="$JAVA_OPTS -Dpaperclip.patchonly=true"
+fi
+
 adb shell "cd /data/local/tmp/mcserver && \
     export LD_LIBRARY_PATH=./lib && \
-    ./bin/java -Xmx$MEMORY -Djava.io.tmpdir=./tmp -jar server.jar nogui"
+    ./bin/java $JAVA_OPTS -jar server.jar nogui"
