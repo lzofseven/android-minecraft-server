@@ -10,7 +10,7 @@ Deploy ultrarrápido de servidor Minecraft (PaperMC) em dispositivos Android via
 
 ```bash
 # 1. Clone o repositório
-git clone https://github.com/LoohanZinho/android-minecraft-server.git
+git clone https://github.com/lzofseven/android-minecraft-server.git
 cd android-minecraft-server
 
 # 2. Execute o script principal
