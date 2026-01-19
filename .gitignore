@@ -1,0 +1,14 @@
+# Build artifacts
+build/
+cache/
+
+# Logs
+*.log
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
