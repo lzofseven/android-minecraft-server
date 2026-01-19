@@ -25,11 +25,28 @@ echo ""
 rm -rf "$MCSERVER_DIR"
 mkdir -p "$MCSERVER_DIR"/{bin,lib,conf,plugins,tmp,cache}
 
+# Calcular versão do Java baseado na versão MC
+MAJOR=$(echo "$VERSION" | cut -d. -f1)
+MINOR=$(echo "$VERSION" | cut -d. -f2)
+VERSION_NUM=$((MAJOR * 100 + MINOR))
+
+# Java version selection:
+# - MC 1.18+  = Java 21
+# - MC 1.17   = Java 17
+# - MC 1.16.5 e anteriores = Java 17 (melhor compatibilidade)
+if [ "$VERSION_NUM" -ge 118 ]; then
+    JAVA_VERSION=21
+elif [ "$VERSION_NUM" -ge 117 ]; then
+    JAVA_VERSION=17
+else
+    JAVA_VERSION=17
+fi
+
 # ============================================
 # Etapa 1: Preparar Java
 # ============================================
-echo "📦 [1/4] Preparando ambiente Java..."
-bash "$SCRIPT_DIR/scripts/setup_java.sh" "$WORK_DIR" "$MCSERVER_DIR"
+echo "📦 [1/4] Preparando ambiente Java $JAVA_VERSION..."
+bash "$SCRIPT_DIR/scripts/setup_java.sh" "$WORK_DIR" "$MCSERVER_DIR" "$JAVA_VERSION"
 
 # ============================================
 # Etapa 2: Baixar Server
