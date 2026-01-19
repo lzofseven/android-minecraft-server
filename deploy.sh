@@ -106,9 +106,9 @@ adb shell "mkdir -p /data/local/tmp/mcserver/tmp"
 # Java agent pode falhar em versões intermediárias
 JAVA_OPTS="-Xmx$MEMORY -Djava.io.tmpdir=./tmp"
 
-# Desabilitar java agent para versões que têm problema
-if [ "$VERSION_NUM" -lt 118 ] && [ "$VERSION_NUM" -ge 112 ]; then
-    JAVA_OPTS="$JAVA_OPTS -Dpaperclip.patchonly=true"
+# Desabilitar java agent e bypass de versão para versões que têm problema
+if [ "$VERSION_NUM" -lt 118 ]; then
+    JAVA_OPTS="$JAVA_OPTS -Dpaperclip.bypass-java-check=true"
 fi
 
 # Iniciar servidor Java

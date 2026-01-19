@@ -198,6 +198,60 @@ download_purpur() {
 }
 
 # ============================================
+# Função: Aplicar Patch PaperClip (Android compat)
+# ============================================
+apply_paper_patch() {
+    local ver="$1"
+    local dest="$2"
+    local ver_num="$3"
+    local input_jar="${4:-server.jar}"
+    
+    if [ "$ver_num" -lt 118 ]; then
+        echo "   ⚠️ Versão pré-1.18. Aplicando patch local (Android compat)..."
+        
+        mkdir -p "$dest/cache"
+        
+        # Garantir que o jar de entrada se chame paper_to_patch.jar para o comando centralizado
+        mv "$dest/$input_jar" "$dest/paper_to_patch.jar"
+        
+        # Para versões muito antigas (< 1.12), baixar vanilla primeiro
+        if [ "$ver_num" -lt 112 ]; then
+            echo "   ⬇️ Baixando vanilla server (necessário para PaperClip)..."
+            python3 "$SCRIPT_DIR/download_vanilla.py" "$ver" "$dest/cache"
+            if [ -f "$dest/cache/minecraft_server.$ver.jar" ]; then
+                cp "$dest/cache/minecraft_server.$ver.jar" "$dest/cache/minecraft_server.jar"
+            fi
+        fi
+        
+        cd "$dest"
+        echo "   Executando PaperClip (pode demorar ~30s)..."
+        # Algumas versões precisam que o jar se chame paper.jar ou algo específico? 
+        # Geralmente o bootstrap detecta. Vamos renomear para paper.jar temporariamente.
+        mv paper_to_patch.jar paper.jar
+        timeout 120 java -jar paper.jar < /dev/null >/dev/null 2>&1 || true
+        
+        if [ -f "cache/patched.jar" ]; then
+            mv cache/patched.jar server.jar
+            echo "   ✓ Patch aplicado (patched.jar)"
+        elif ls cache/patched_*.jar 1>/dev/null 2>&1; then
+            mv cache/patched_*.jar server.jar
+            echo "   ✓ Patch aplicado (patched_*.jar)"
+        elif ls cache/mojang_*.jar 1>/dev/null 2>&1; then
+            mv paper.jar server.jar
+            echo "   ✓ Patch aplicado (paper.jar patcheado)"
+        else
+            # Tentar ver se o paper.jar agora funciona (alguns bootstraps apenas extraem coisas)
+            mv paper.jar server.jar
+            echo "   ⚠️ Patch finalizado (usando core extraído)"
+        fi
+        rm -f paper.jar 2>/dev/null || true
+    else
+        # Se for >= 1.18, apenas garante que se chama server.jar
+        [ -f "$dest/$input_jar" ] && [ "$input_jar" != "server.jar" ] && mv "$dest/$input_jar" "$dest/server.jar"
+    fi
+}
+
+# ============================================
 # Lógica Principal
 # ============================================
 
@@ -207,82 +261,21 @@ MINOR=$(echo "$VERSION" | cut -d. -f2)
 VERSION_NUM=$((MAJOR * 100 + MINOR))
 
 case "$SERVER_TYPE" in
-    paper)
-        if try_paper_versions "$VERSION" "$MCSERVER_DIR"; then
-            ACTUAL_VERSION=$(cat "$MCSERVER_DIR/.paper_version" 2>/dev/null || echo "$VERSION")
-            
-            # Patch local para versões antes de 1.18 (Java agent não funciona no Android)
-            if [ "$VERSION_NUM" -lt 118 ]; then
-                echo "   ⚠️ Versão pré-1.18. Aplicando patch local (Android não suporta Java Agent)..."
-                
-                # Criar diretório cache se necessário
-                mkdir -p "$MCSERVER_DIR/cache"
-                
-                # Para versões muito antigas (< 1.12), baixar vanilla primeiro (URL quebrada no paperclip)
-                if [ "$VERSION_NUM" -lt 112 ]; then
-                    echo "   ⬇️ Baixando vanilla server (necessário para 1.8.x-1.11.x)..."
-                    python3 "$SCRIPT_DIR/download_vanilla.py" "$ACTUAL_VERSION" "$MCSERVER_DIR/cache"
-                    
-                    # Renomear para o formato esperado pelo paperclip
-                    if [ -f "$MCSERVER_DIR/cache/minecraft_server.$ACTUAL_VERSION.jar" ]; then
-                        mv "$MCSERVER_DIR/cache/minecraft_server.$ACTUAL_VERSION.jar" "$MCSERVER_DIR/cache/minecraft_server.jar"
-                    fi
-                fi
-                
-                # Rodar PaperClip localmente para gerar o jar patcheado
-                cd "$MCSERVER_DIR"
-                echo "   Executando PaperClip (pode demorar ~30s)..."
-                timeout 120 java -jar paper.jar >/dev/null 2>&1 || true
-                
-                # Verificar se gerou o patched jar (diferentes versões usam nomes diferentes)
-                if [ -f "cache/patched.jar" ]; then
-                    mv cache/patched.jar server.jar
-                    rm -f paper.jar
-                    echo "   ✓ Patch aplicado (cache/patched.jar)"
-                elif ls cache/patched_*.jar 1>/dev/null 2>&1; then
-                    # Paper 1.8.x gera patched_X.X.X.jar
-                    mv cache/patched_*.jar server.jar
-                    rm -f paper.jar
-                    echo "   ✓ Patch aplicado (patched_*.jar)"
-                elif ls cache/mojang_*.jar 1>/dev/null 2>&1; then
-                    # Algumas versões geram mojang_*.jar (o vanilla baixado)
-                    # Neste caso usamos o paper.jar que já foi patcheado
-                    mv paper.jar server.jar
-                    echo "   ✓ Patch aplicado (paper.jar patcheado)"
-                else
-                    # Se não gerou nada reconhecível, mover o paper.jar
-                    mv paper.jar server.jar
-                    echo "   ⚠️ Usando paper.jar direto (patch pode falhar)"
-                fi
-            else
-                mv "$MCSERVER_DIR/paper.jar" "$MCSERVER_DIR/server.jar"
+    paper|vanilla)
+        if [ "$VERSION_NUM" -ge 113 ] && [ "$VERSION_NUM" -le 117 ]; then
+            echo "   ℹ️ Ver detected in J17 dead-zone (1.13-1.17). Usando Fabric para melhor compatibilidade."
+            if download_fabric "$VERSION" "$MCSERVER_DIR"; then
+                SERVER_TYPE="fabric" # Para o download de plugin/mod
+                download_playit_plugin "$MCSERVER_DIR" "fabric"
+                exit 0
             fi
-        else
-            echo "   ⚠️ Paper indisponível. Fallback para Vanilla..."
-            download_vanilla "$VERSION" "$MCSERVER_DIR/cache"
         fi
-        ;;
-    
-    vanilla)
-        # Para Vanilla funcionar com Playit no Android (DNS fix), usamos Paper
-        # que é 100% compatível com clientes Vanilla e suporta o plugin.
-        echo "   ℹ️ Usando Paper como base para Vanilla (necessário para Playit)"
+
+        # Fallback normal ou versão 1.18+ / 1.12-
+        echo "   ℹ️ Usando Paper como base (necessário para Playit)"
         if try_paper_versions "$VERSION" "$MCSERVER_DIR"; then
-            # (O processamento do patch já acontece no caso 'paper', 
-            # mas precisamos replicar ou extrair para uma função)
-            # Para simplificar, vamos apenas chamar o caso paper internamente
-            SERVER_TYPE="paper" # Temporário para a lógica abaixo
-            # Como estamos dentro do case, não podemos pular, então duplicamos a lógica de patch
             ACTUAL_VERSION=$(cat "$MCSERVER_DIR/.paper_version" 2>/dev/null || echo "$VERSION")
-            if [ "$VERSION_NUM" -lt 118 ]; then
-                # ... (Lógica de patch simplificada para o bridge)
-                cd "$MCSERVER_DIR"
-                java -jar paper.jar >/dev/null 2>&1 || true
-                mv cache/patched*.jar server.jar 2>/dev/null || mv paper.jar server.jar
-            else
-                mv "$MCSERVER_DIR/paper.jar" "$MCSERVER_DIR/server.jar"
-            fi
-            SERVER_TYPE="vanilla" # Restaurar
+            apply_paper_patch "$ACTUAL_VERSION" "$MCSERVER_DIR" "$VERSION_NUM" "paper.jar"
         else
             echo "   ⚠️ Paper indisponível. Usando Vanilla PURO (Playit pode não funcionar)"
             download_vanilla "$VERSION" "$MCSERVER_DIR/cache" || exit 1
@@ -297,7 +290,9 @@ case "$SERVER_TYPE" in
         ;;
     
     purpur)
-        if ! download_purpur "$VERSION" "$MCSERVER_DIR"; then
+        if download_purpur "$VERSION" "$MCSERVER_DIR"; then
+            apply_paper_patch "$VERSION" "$MCSERVER_DIR" "$VERSION_NUM" "server.jar"
+        else
             echo "   ❌ Purpur não disponível para $VERSION"
             exit 1
         fi
