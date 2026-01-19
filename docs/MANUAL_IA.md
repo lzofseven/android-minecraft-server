@@ -37,10 +37,9 @@ cd android-minecraft-server
 
 | Faixa | Exemplos | RAM Recomendada | Notas |
 |-------|----------|-----------------|-------|
-| 1.21+ | 1.21, 1.21.1 | 1.5GB+ | Java 21 obrigatório |
-| 1.18-1.20 | 1.18.2, 1.19.4, 1.20.4 | 1GB+ | Java 17+ |
-| 1.12-1.17 | 1.12.2, 1.16.5 | 1GB | Java 8-16 |
-| 1.8-1.11 | 1.8.8, 1.8.9, 1.11.2 | 768MB | Requer patch local |
+| 1.18+ | 1.21.4, 1.20 | 1.5GB+ | Java 21 Automático |
+| 1.13-1.17 | 1.16.5, 1.17.1 | 1GB | **Ponte Fabric** (Auto-Bridge para J17) |
+| 1.8-1.12 | 1.8.9, 1.12.2 | 768MB | **Patch Local** (Remove Java Agent check) |
 
 ### ⚠️ Versões Antigas (< 1.12)
 Para versões antigas, o script automaticamente:
