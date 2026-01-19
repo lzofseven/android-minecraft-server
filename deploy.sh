@@ -111,6 +111,7 @@ if [ "$VERSION_NUM" -lt 118 ] && [ "$VERSION_NUM" -ge 112 ]; then
     JAVA_OPTS="$JAVA_OPTS -Dpaperclip.patchonly=true"
 fi
 
+# Iniciar servidor Java
 adb shell "cd /data/local/tmp/mcserver && \
     export LD_LIBRARY_PATH=./lib && \
     ./bin/java $JAVA_OPTS -jar server.jar nogui"

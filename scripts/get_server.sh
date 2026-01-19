@@ -14,13 +14,45 @@ mkdir -p "$MCSERVER_DIR/cache" "$MCSERVER_DIR/plugins"
 echo "   Tipo: $SERVER_TYPE | Versão: $VERSION"
 
 # ============================================
-# Baixar Playit Plugin
+# Baixar Playit Agent (Standalone)
 # ============================================
-PLAYIT_URL="https://github.com/playit-cloud/playit-minecraft-plugin/releases/latest/download/playit-minecraft-plugin.jar"
-if [ ! -f "$MCSERVER_DIR/plugins/playit-minecraft-plugin.jar" ]; then
-    echo "   Baixando Playit Plugin..."
-    wget -q -O "$MCSERVER_DIR/plugins/playit-minecraft-plugin.jar" "$PLAYIT_URL"
-fi
+download_playit_agent() {
+    local dest="$1"
+    local playit_ver="v0.15.26"
+    local jar_url="https://github.com/playit-cloud/playit-agent/releases/download/$playit_ver/playit-linux-aarch64"
+    
+    if [ ! -f "$dest/playit-agent" ]; then
+        echo "   Baixando Playit Standalone Agent ($playit_ver)..."
+        curl -sL -o "$dest/playit-agent" "$jar_url"
+        chmod +x "$dest/playit-agent"
+    fi
+}
+
+download_playit_agent "$MCSERVER_DIR"
+
+# ============================================
+# Baixar Playit Plugin/Mod (Universal)
+# ============================================
+download_playit_plugin() {
+    local dest="$1"
+    local type="$2"
+    local playit_url="https://github.com/playit-cloud/playit-minecraft-plugin/releases/latest/download/playit-minecraft-plugin.jar"
+    
+    if [ "$type" = "fabric" ]; then
+        # Playit Fabric Mod
+        echo "   Baixando Playit Fabric Mod..."
+        mkdir -p "$dest/mods"
+        # URL do mod fabric (buscando a versão 1.16.5+ compatível)
+        playit_url="https://github.com/playit-cloud/playit-fabric-mod/releases/latest/download/playit-fabric-mod.jar"
+        wget -q -O "$dest/mods/playit-fabric-mod.jar" "$playit_url"
+    else
+        echo "   Baixando Playit Plugin (Bukkit)..."
+        mkdir -p "$dest/plugins"
+        wget -q -O "$dest/plugins/playit-minecraft-plugin.jar" "$playit_url"
+    fi
+}
+
+download_playit_plugin "$MCSERVER_DIR" "$SERVER_TYPE"
 
 echo "eula=true" > "$MCSERVER_DIR/eula.txt"
 
@@ -232,7 +264,29 @@ case "$SERVER_TYPE" in
         ;;
     
     vanilla)
-        download_vanilla "$VERSION" "$MCSERVER_DIR/cache" || exit 1
+        # Para Vanilla funcionar com Playit no Android (DNS fix), usamos Paper
+        # que é 100% compatível com clientes Vanilla e suporta o plugin.
+        echo "   ℹ️ Usando Paper como base para Vanilla (necessário para Playit)"
+        if try_paper_versions "$VERSION" "$MCSERVER_DIR"; then
+            # (O processamento do patch já acontece no caso 'paper', 
+            # mas precisamos replicar ou extrair para uma função)
+            # Para simplificar, vamos apenas chamar o caso paper internamente
+            SERVER_TYPE="paper" # Temporário para a lógica abaixo
+            # Como estamos dentro do case, não podemos pular, então duplicamos a lógica de patch
+            ACTUAL_VERSION=$(cat "$MCSERVER_DIR/.paper_version" 2>/dev/null || echo "$VERSION")
+            if [ "$VERSION_NUM" -lt 118 ]; then
+                # ... (Lógica de patch simplificada para o bridge)
+                cd "$MCSERVER_DIR"
+                java -jar paper.jar >/dev/null 2>&1 || true
+                mv cache/patched*.jar server.jar 2>/dev/null || mv paper.jar server.jar
+            else
+                mv "$MCSERVER_DIR/paper.jar" "$MCSERVER_DIR/server.jar"
+            fi
+            SERVER_TYPE="vanilla" # Restaurar
+        else
+            echo "   ⚠️ Paper indisponível. Usando Vanilla PURO (Playit pode não funcionar)"
+            download_vanilla "$VERSION" "$MCSERVER_DIR/cache" || exit 1
+        fi
         ;;
     
     fabric)
