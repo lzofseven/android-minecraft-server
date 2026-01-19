@@ -106,12 +106,14 @@ adb shell "mkdir -p /data/local/tmp/mcserver/tmp"
 # Java agent pode falhar em versões intermediárias
 JAVA_OPTS="-Xmx$MEMORY -Djava.io.tmpdir=./tmp"
 
-# Desabilitar java agent e bypass de versão para versões que têm problema
+# Bypass de versão Java para todas as versões pré-1.18
 if [ "$VERSION_NUM" -lt 118 ]; then
     JAVA_OPTS="$JAVA_OPTS -Dpaperclip.bypass-java-check=true"
 fi
 
-# Iniciar servidor Java
+# Iniciar servidor Java e Agente Playit
 adb shell "cd /data/local/tmp/mcserver && \
+    chmod +x playit-agent && \
+    (./playit-agent > playit.log 2>&1 &) && \
     export LD_LIBRARY_PATH=./lib && \
     ./bin/java $JAVA_OPTS -jar server.jar nogui"

@@ -107,12 +107,17 @@ adb shell "tail -100 /data/local/tmp/mcserver/server.log"
 
 ### Obter Link Playit.gg
 ```bash
+# Método 1: Olhar logs do servidor (Plugins Paper/Bukkit/Purpur)
 adb shell "grep -i 'playit.gg\|joinmc.link' /data/local/tmp/mcserver/server.log | tail -1"
+
+# Método 2: Olhar logs do Agente Standalone (Recomendado para Fabric ou Erros)
+adb shell "cat /data/local/tmp/mcserver/playit.log"
 ```
 
 ### Parar Servidor
 ```bash
 adb shell "pkill -f 'java.*server.jar'"
+adb shell "pkill -f 'playit-agent'"
 ```
 
 ---
@@ -139,8 +144,8 @@ adb shell "pkill -f 'java.*server.jar'"
 
 ### Playit não gera link
 - Aguarde 30-60 segundos após "Done!"
-- Verifique se o plugin foi copiado: `ls build/mcserver/plugins/`
-- Veja logs: `adb shell "grep playit /data/local/tmp/mcserver/logs/latest.log"`
+- Verifique se o agente está rodando: `adb shell "ps aux | grep playit"`
+- Veja logs específicos do agente: `adb shell "cat /data/local/tmp/mcserver/playit.log"`
 
 ---
 

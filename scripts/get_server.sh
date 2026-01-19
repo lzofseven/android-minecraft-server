@@ -39,12 +39,11 @@ download_playit_plugin() {
     local playit_url="https://github.com/playit-cloud/playit-minecraft-plugin/releases/latest/download/playit-minecraft-plugin.jar"
     
     if [ "$type" = "fabric" ]; then
-        # Playit Fabric Mod
-        echo "   Baixando Playit Fabric Mod..."
+        # Playit Fabric Mod (Official discontinued/link changes frequent)
+        # Standalone agent is mandatory for better stability on Android/Fabric
+        echo "   ℹ️ Fabric detectado: Link de Mod instável. Usando Agente Standalone (Recomendado)."
+        echo "   ⚠️ Playit será iniciado via Agente binário no deploy.sh"
         mkdir -p "$dest/mods"
-        # URL do mod fabric (buscando a versão 1.16.5+ compatível)
-        playit_url="https://github.com/playit-cloud/playit-fabric-mod/releases/latest/download/playit-fabric-mod.jar"
-        wget -q -O "$dest/mods/playit-fabric-mod.jar" "$playit_url"
     else
         echo "   Baixando Playit Plugin (Bukkit)..."
         mkdir -p "$dest/plugins"
