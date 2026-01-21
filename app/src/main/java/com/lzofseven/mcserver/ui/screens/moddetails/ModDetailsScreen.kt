@@ -113,8 +113,8 @@ fun ModDetailsScreen(
                                             labelColor = Color.White.copy(0.7f)
                                         )
                                     )
-                                    // Version chips (show first 10 most recent)
-                                    availableGameVersions.take(10).forEach { version ->
+                                    // Version chips (all available versions)
+                                    availableGameVersions.forEach { version ->
                                         FilterChip(
                                             selected = selectedGameVersion == version,
                                             onClick = { viewModel.selectGameVersion(version) },
