@@ -126,8 +126,7 @@ fun DashboardScreen(
                         if (playitStatus != "Stopped" || claimLink != null) {
                             PlayitStatusCard(
                                 status = playitStatus, 
-                                claimLink = claimLink,
-                                serverRunning = serverStatus == com.lzofseven.mcserver.data.model.ServerStatus.RUNNING
+                                claimLink = claimLink
                             )
                         }
                     }
@@ -697,9 +696,6 @@ fun PermissionDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     )
 }
 
-enum class ServerStatus {
-    STOPPED, STARTING, RUNNING, INSTALLING
-}
 @Composable
 fun PlayitStatusCard(status: String, claimLink: String?) {
     val context = androidx.compose.ui.platform.LocalContext.current
