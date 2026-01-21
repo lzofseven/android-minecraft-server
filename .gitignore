@@ -1,14 +1,8 @@
-# Build artifacts
-build/
-cache/
 
-# Logs
-*.log
+# Android Build
+app/build/
+.gradle/
+local.properties
 
-# Editor
-.idea/
-.vscode/
-*.swp
-
-# OS
-.DS_Store
+# Reference
+reference_repo/

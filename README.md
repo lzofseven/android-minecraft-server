@@ -1,47 +1,66 @@
-# 🐀 Android Minecraft Server
+# Android Minecraft Server Manager
 
-Deploy ultrarrápido de servidor Minecraft em Android via ADB.
+Aplicativo Android nativo para gerenciar servidores Minecraft localmente no seu dispositivo.
 
-## ✨ Novidades v2.0
-- Suporte a **todas as versões** (1.8.x até 1.21+)
-- Múltiplos tipos: **Paper, Vanilla, Fabric, Purpur**
-- Ajuste automático de RAM por versão
-- Patch automático para versões antigas
+## 🚀 Features
 
-## 🚀 Uso Rápido
+- ✅ Interface moderna com Material Design 3
+- 🎮 Suporte para Paper, Fabric, Vanilla e Forge
+- 📦 Biblioteca integrada (Modrinth API) para mods/plugins/packs
+- ⌨️ Console interativo com input de comandos
+- 🌐 Integração automática com Playit.gg
+- 🔄 **Persistência de Status**: Recuperação automática de crash/reboot
+- 🛡️ **Gerenciamento de Jogadores**: Sistema de OP, Whitelist e Ban
+- 🔍 **Busca de Players**: Filtro rápido de jogadores online
+- ⚙️ Configurações avançadas (CPU cores, frequência, RAM)
+- 📁 Caminho personalizável para o mundo
 
+## 📋 Requisitos
+
+- Android 7.0+ (API 24+)
+- 2GB+ RAM (recomendado 4GB)
+- Espaço de armazenamento suficiente
+
+## 🛠️ Como Compilar
+
+### Android Studio
+1. Clone o repositório
+2. Abra o projeto no Android Studio
+3. Sincronize o Gradle
+4. Build → Build APK
+
+### Linha de Comando
 ```bash
-git clone https://github.com/lzofseven/android-minecraft-server.git
-cd android-minecraft-server
-
-# Uso básico
-./deploy.sh <VERSAO> <IP:PORTA> [TIPO]
-
-# Exemplos
-./deploy.sh 1.21 192.168.100.6:44339           # Paper (padrão)
-./deploy.sh 1.8.9 192.168.100.6:44339 paper    # Paper 1.8.9
-./deploy.sh 1.20.4 192.168.100.6:44339 fabric  # Fabric modado
-./deploy.sh 1.16.5 192.168.100.6:44339 purpur  # Purpur otimizado
+./gradlew assembleDebug
 ```
 
-## 📁 Estrutura
-```
-android-minecraft-server/
-├── deploy.sh              # Script principal
-├── scripts/
-│   ├── setup_java.sh      # Ambiente Java (Termux)
-│   ├── get_server.sh      # Download universal
-│   └── download_vanilla.py
-├── docs/
-│   ├── GUIA_ADB.md        # Configurar ADB
-│   ├── MANUAL_IA.md       # Instruções para IA
-│   └── MANUAL_IA_BACKGROUND.md
-└── README.md
-```
+APK gerado em: `app/build/outputs/apk/debug/app-debug.apk`
 
-## 📖 Documentação
-- [Guia ADB (USB/WiFi)](docs/GUIA_ADB.md)
-- [Manual para IA](docs/MANUAL_IA.md)
+## 📸 Screenshots
 
-## 📜 Licença
-MIT
+> TODO: Adicionar screenshots
+
+## 🔧 Configurações Disponíveis
+
+- **Tipo de Servidor**: Paper, Fabric, Vanilla, Forge
+- **Versão do Minecraft**: 1.8.9 - 1.21+
+- **Memória RAM**: 512MB - 4GB
+- **Núcleos de CPU**: Configurável (1 - max disponível)
+- **Forçar Frequência Máxima**: Aumenta performance
+- **Caminho do Mundo**: Personalizável
+
+## 📚 Bibliotecas Utilizadas
+
+- Jetpack Compose
+- Hilt (DI)
+- Retrofit (API)
+- Room (Database)
+- DataStore (Preferences)
+
+## 📝 License
+
+MIT License
+
+## 👤 Author
+
+Lohan Santos (@lzofseven)
