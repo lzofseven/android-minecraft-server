@@ -31,4 +31,8 @@ class ModrinthRepository @Inject constructor(
     suspend fun getVersions(projectId: String, loader: String? = null, gameVersion: String? = null): List<com.lzofseven.mcserver.data.model.ModrinthVersion> = withContext(Dispatchers.IO) {
         api.getProjectVersions(projectId, loader, gameVersion)
     }
+
+    suspend fun getProject(projectId: String): com.lzofseven.mcserver.data.model.ModrinthProject = withContext(Dispatchers.IO) {
+        api.getProject(projectId)
+    }
 }

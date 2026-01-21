@@ -170,6 +170,48 @@ class ServerManagementViewModel @Inject constructor(
         }
     }
 
+    private val _serverIconUpdate = MutableStateFlow(0L)
+    val serverIconUpdate: StateFlow<Long> = _serverIconUpdate.asStateFlow()
+    
+    private val _serverIconPath = MutableStateFlow<String?>(null)
+    val serverIconPath: StateFlow<String?> = _serverIconPath.asStateFlow()
+
+    init {
+        loadProperties()
+        viewModelScope.launch {
+            val server = repository.getServerById(serverId)
+            if (server != null) {
+                _serverIconPath.value = File(server.path, "server-icon.png").absolutePath
+            }
+        }
+    }
+
+    fun setServerIcon(uri: android.net.Uri) {
+        viewModelScope.launch {
+            try {
+                val server = repository.getServerById(serverId) ?: return@launch
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val originalBitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                inputStream?.close()
+
+                if (originalBitmap != null) {
+                    val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(originalBitmap, 64, 64, true)
+                    val iconFile = File(server.path, "server-icon.png")
+                    val outStream = java.io.FileOutputStream(iconFile)
+                    scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outStream)
+                    outStream.close()
+                    
+                    log("Server icon updated: ${iconFile.absolutePath}")
+                    _serverIconPath.value = iconFile.absolutePath // Update path to trigger refresh if needed
+                    _serverIconUpdate.value = System.currentTimeMillis() // Signal UI update
+                }
+            } catch (e: Exception) {
+                log("Error setting server icon: ${e.message}")
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun grantOp(username: String) {
         viewModelScope.launch {
             try {

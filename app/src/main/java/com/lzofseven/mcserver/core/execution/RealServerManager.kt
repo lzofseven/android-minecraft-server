@@ -20,6 +20,7 @@ import android.content.Context
 class RealServerManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val javaManager: JavaVersionManager,
+    private val phpManager: com.lzofseven.mcserver.core.php.PhpRuntimeManager,
     private val notificationHelper: NotificationHelper,
     private val serverRepository: com.lzofseven.mcserver.data.repository.ServerRepository
 ) {
@@ -77,88 +78,115 @@ class RealServerManager @Inject constructor(
 
         _consoleStreams.getOrPut(server.id) { MutableSharedFlow(replay = 50) }
         
-        // 1. Determine Java Version based on MC Version
-        val javaVersion = getJavaVersionForMc(server.version)
-        emitLog(server.id, "Checking Java $javaVersion...")
-
-        if (!javaManager.isJavaInstalled(javaVersion)) {
-            emitLog(server.id, "Installing Java $javaVersion runtime... This may take a while.")
-             javaManager.installJava(javaVersion).collect { status ->
-                 if (status is DownloadStatus.Progress) {
-                     // Optionally emit progress to console
-                 }
-             }
-        }
-        
-        val javaBin = javaManager.getJavaExecutable(javaVersion)
-        if (!javaBin.exists()) {
-            emitLog(server.id, "Error: Java binary not found at ${javaBin.absolutePath}")
-            // If failed and no other server running, stop service
-            if (processes.isEmpty()) {
-                com.lzofseven.mcserver.service.MinecraftService.stop(context)
-            }
-            return
-        }
-
-        emitLog(server.id, "Starting server with ${javaBin.name}...")
-
-        // 2. Ensure critical symlinks exist (libc++_shared.so)
-        val libDir = File(javaBin.parentFile.parentFile, "lib")
-        val libCppShared = File(libDir, "libc++_shared.so")
-        if (!libCppShared.exists()) {
-            try {
-                val systemLibCpp = if (File("/system/lib64/libc++.so").exists()) "/system/lib64/libc++.so" else "/system/lib/libc++.so"
-                android.system.Os.symlink(systemLibCpp, libCppShared.absolutePath)
-                android.util.Log.d("RealServerManager", "Created missing libc++ symlink: ${libCppShared.absolutePath}")
-            } catch (e: Exception) {
-                android.util.Log.e("RealServerManager", "Failed to create runtime symlink", e)
-            }
-        }
-
-        // 3. Prepare ProcessBuilder
+        val isPocketMine = server.type.equals("pocketmine", ignoreCase = true)
         val serverDir = File(server.path)
-        val serverJar = File(serverDir, "server.jar")
         
-        if (!serverJar.exists()) {
-            emitLog(server.id, "Error: server.jar not found in ${serverDir.absolutePath}")
-            if (processes.isEmpty()) {
-                com.lzofseven.mcserver.service.MinecraftService.stop(context)
+        val executable: File
+        val commandPrefix: List<String>
+        
+        if (isPocketMine) {
+            emitLog(server.id, "Checking PHP Runtime...")
+            if (!phpManager.isPhpInstalled()) {
+                emitLog(server.id, "Installing PHP for Android (ARM64)...")
+                phpManager.installPhp().collect { status ->
+                     // Log progress if needed
+                }
             }
-            return
+            executable = phpManager.getPhpExecutable()
+            if (!executable.exists()) {
+                emitLog(server.id, "Error: PHP binary not found.")
+                stopServiceIfEmpty()
+                return
+            }
+            
+            val pharFile = File(serverDir, "PocketMine-MP.phar")
+            if (!pharFile.exists()) {
+                 emitLog(server.id, "Error: PocketMine-MP.phar not found.")
+                 stopServiceIfEmpty()
+                 return
+            }
+            
+            commandPrefix = listOf(executable.absolutePath, "PocketMine-MP.phar")
+            
+        } else {
+            // Java Check
+            val javaVersion = getJavaVersionForMc(server.version)
+            emitLog(server.id, "Checking Java $javaVersion...")
+    
+            if (!javaManager.isJavaInstalled(javaVersion)) {
+                emitLog(server.id, "Installing Java $javaVersion runtime... This may take a while.")
+                 javaManager.installJava(javaVersion).collect { status ->
+                     if (status is DownloadStatus.Progress) {
+                         // Optionally emit progress to console
+                     }
+                 }
+            }
+            
+            executable = javaManager.getJavaExecutable(javaVersion)
+            if (!executable.exists()) {
+                emitLog(server.id, "Error: Java binary not found at ${executable.absolutePath}")
+                stopServiceIfEmpty()
+                return
+            }
+    
+            emitLog(server.id, "Starting server with ${executable.name}...")
+    
+            // Ensure critical symlinks exist
+            val libDir = File(executable.parentFile.parentFile, "lib")
+            val libCppShared = File(libDir, "libc++_shared.so")
+            if (!libCppShared.exists()) {
+                try {
+                    val systemLibCpp = if (File("/system/lib64/libc++.so").exists()) "/system/lib64/libc++.so" else "/system/lib/libc++.so"
+                    android.system.Os.symlink(systemLibCpp, libCppShared.absolutePath)
+                    android.util.Log.d("RealServerManager", "Created missing libc++ symlink: ${libCppShared.absolutePath}")
+                } catch (e: Exception) {
+                    android.util.Log.e("RealServerManager", "Failed to create runtime symlink", e)
+                }
+            }
+            
+            val serverJar = File(serverDir, "server.jar")
+            
+            if (!serverJar.exists()) {
+                emitLog(server.id, "Error: server.jar not found in ${serverDir.absolutePath}")
+                stopServiceIfEmpty()
+                return
+            }
+    
+            commandPrefix = listOf(
+                executable.absolutePath,
+                "-Xms${server.ramAllocationMB}M",
+                "-Xmx${server.ramAllocationMB}M",
+                "-Djna.tmpdir=${context.cacheDir.absolutePath}",
+                "-Djava.io.tmpdir=${context.cacheDir.absolutePath}",
+                "-jar",
+                serverJar.absolutePath,
+                "nogui"
+            )
         }
-
-        val commands = listOf(
-            javaBin.absolutePath,
-            "-Xms${server.ramAllocationMB}M",
-            "-Xmx${server.ramAllocationMB}M",
-            "-Djna.tmpdir=${context.cacheDir.absolutePath}",
-            "-Djava.io.tmpdir=${context.cacheDir.absolutePath}",
-            "-jar",
-            serverJar.absolutePath,
-            "nogui"
-        )
 
         try {
             // Create PID file
             val pidFile = File(serverDir, "server.pid")
             
-            val builder = ProcessBuilder(commands)
+            val builder = ProcessBuilder(commandPrefix)
             builder.directory(serverDir)
             builder.redirectErrorStream(true)
             
-            // 3. Setup Environment (LD_LIBRARY_PATH for Android/Termux libs)
+            // Setup Environment
             val env = builder.environment()
-            val javaHome = javaBin.parentFile.parentFile // .../runtimes/java-17
-            val libPath = File(javaHome, "lib").absolutePath
-            val appLibPath = context.applicationInfo.nativeLibraryDir
-            val systemLibPath = "/system/lib64:/system/lib"
             
-            val currentLd = env["LD_LIBRARY_PATH"] ?: ""
-            env["LD_LIBRARY_PATH"] = "$libPath:$appLibPath:$systemLibPath:$currentLd"
-            env["HOME"] = serverDir.absolutePath // Some servers rely on HOME
-            
-            // Log env for debugging if needed
-            android.util.Log.d("RealServerManager", "LD_LIBRARY_PATH: ${env["LD_LIBRARY_PATH"]}")
+            if (isPocketMine) {
+                 env["PHP_BINARY"] = executable.absolutePath
+            } else {
+                val javaHome = executable.parentFile.parentFile
+                val libPath = File(javaHome, "lib").absolutePath
+                val appLibPath = context.applicationInfo.nativeLibraryDir
+                val systemLibPath = "/system/lib64:/system/lib"
+                
+                val currentLd = env["LD_LIBRARY_PATH"] ?: ""
+                env["LD_LIBRARY_PATH"] = "$libPath:$appLibPath:$systemLibPath:$currentLd"
+            }
+            env["HOME"] = serverDir.absolutePath
 
             val process = builder.start()
             processes[server.id] = process
@@ -375,10 +403,22 @@ class RealServerManager @Inject constructor(
 
                     // Update live notification with professional stats
                     val playerCount = _onlinePlayers[serverId]?.value?.size ?: 0
-                    // We assume 20 as max if not parsed from server.properties for now
+                    
+                    val maxPlayers = try {
+                        val server = serverRepository.getServerById(serverId)
+                        if (server != null) {
+                            val propsFile = File(server.path, "server.properties")
+                            if (propsFile.exists()) {
+                                val props = java.util.Properties()
+                                props.load(java.io.FileInputStream(propsFile))
+                                props.getProperty("max-players", "20").toIntOrNull() ?: 20
+                            } else 20
+                        } else 20
+                    } catch (e: Exception) { 20 }
                     
                     notificationHelper.updateLiveStats(
-                        players = "$playerCount/20",
+                        onlinePlayers = playerCount,
+                        maxPlayers = maxPlayers,
                         cpu = "${cpuPercent.toInt()}%",
                         ram = "${String.format("%.1f", ramGb)}/${String.format("%.1f", ramLimitGb)}GB"
                     )
@@ -446,13 +486,31 @@ class RealServerManager @Inject constructor(
 
     private fun emitLog(serverId: String, message: String) {
         val flow = _consoleStreams.getOrPut(serverId) { MutableSharedFlow(replay = 50) }
-        val timestamp = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
         scope.launch {
-            flow.emit("[$timestamp] $message")
+            // Strip ANSI codes to check for timestamp
+            val cleanMessage = message.replace(Regex("\u001B\\[[;\\d]*m"), "")
+            
+            // Check if message effectively starts with [HH:mm:ss]
+            // We use find() instead of matches() to avoid issues with trailing characters or whitespace
+            // The regex looks for start of string, optional whitespace, optional ANSI, then [digits:digits:digits]
+            val hasTimestamp = Regex("^\\s*\\[\\d{2}:\\d{2}:\\d{2}]").containsMatchIn(cleanMessage)
+            
+            if (hasTimestamp) {
+                flow.emit(message)
+            } else {
+                val timestamp = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
+                flow.emit("[$timestamp] $message")
+            }
         }
     }
 
     private fun getJavaVersionForMc(mcVersion: String): Int {
         return McVersionUtils.getRequiredJavaVersion(mcVersion)
+    }
+
+    private fun stopServiceIfEmpty() {
+        if (processes.isEmpty()) {
+            com.lzofseven.mcserver.service.MinecraftService.stop(context)
+        }
     }
 }

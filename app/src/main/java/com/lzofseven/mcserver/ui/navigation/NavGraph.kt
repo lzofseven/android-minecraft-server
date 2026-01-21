@@ -39,6 +39,9 @@ sealed class Screen(val route: String) {
     object ServerManagement : Screen("server_management/{serverId}") {
         fun createRoute(serverId: String) = "server_management/$serverId"
     }
+    object ModDetails : Screen("mod_details/{serverId}/{projectId}") {
+        fun createRoute(serverId: String, projectId: String) = "mod_details/$serverId/$projectId"
+    }
 }
 
 @Composable
@@ -104,6 +107,16 @@ fun NavGraph(
             arguments = listOf(navArgument("serverId") { type = NavType.StringType })
         ) {
             com.lzofseven.mcserver.ui.screens.management.ServerManagementScreen(navController = navController)
+        }
+        
+        composable(
+            route = Screen.ModDetails.route,
+            arguments = listOf(
+                navArgument("serverId") { type = NavType.StringType },
+                navArgument("projectId") { type = NavType.StringType }
+            )
+        ) {
+            com.lzofseven.mcserver.ui.screens.moddetails.ModDetailsScreen(navController = navController)
         }
     }
 }

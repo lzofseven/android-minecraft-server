@@ -18,9 +18,12 @@ import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
+import okio.buffer
+import okio.sink
+import okio.source
+import java.io.File
 import com.lzofseven.mcserver.core.execution.PlayitManager
 import okhttp3.OkHttpClient
-import java.io.File
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -66,6 +69,23 @@ class DashboardViewModel @Inject constructor(
 
     private val _showEulaDialog = MutableStateFlow(false)
     val showEulaDialog: StateFlow<Boolean> = _showEulaDialog.asStateFlow()
+
+    private val _showRamDialog = MutableStateFlow(false)
+    val showRamDialog: StateFlow<Boolean> = _showRamDialog.asStateFlow()
+    
+    fun openRamDialog() { _showRamDialog.value = true }
+    fun closeRamDialog() { _showRamDialog.value = false }
+    
+    fun updateRamAllocation(mb: Int) {
+        viewModelScope.launch {
+            val server = _serverEntity.value ?: return@launch
+            val updatedServer = server.copy(ramAllocationMB = mb)
+            repository.updateServer(updatedServer)
+            _serverEntity.value = updatedServer
+            log("RAM allocation updated to ${mb}MB")
+            _showRamDialog.value = false
+        }
+    }
     
     // Real Console Flow (Last 10 lines)
     val consoleLogs: StateFlow<List<String>> = serverManager.getConsoleFlow(serverId)
@@ -318,6 +338,7 @@ class DashboardViewModel @Inject constructor(
     }
     
     private suspend fun stopServer() {
+        _serverStatus.value = ServerStatus.STOPPING
         serverManager.stopServer(serverId)
         _serverStatus.value = ServerStatus.STOPPED
         
@@ -331,52 +352,99 @@ class DashboardViewModel @Inject constructor(
 
     private suspend fun downloadServerJarIfNeeded(server: MCServerEntity): Boolean {
         val serverDir = File(server.path)
-        val serverJar = File(serverDir, "server.jar")
+        val isPocketMine = server.type.equals("POCKETMINE", ignoreCase = true)
+        val isBedrock = server.type.equals("BEDROCK", ignoreCase = true)
         
-        // Even if using SAF, we check the local path first if possible
-        // or we can try to find it via SAF if uri is present.
-        // For simplicity, we check if we can see it. 
-        // If we can't see it due to permissions, the startServer will fail anyway.
-        // But if we have an empty folder, we definitely need to download.
+        val targetFilename = if (isPocketMine) "PocketMine-MP.phar" else "server.jar"
+        val serverJar = File(serverDir, targetFilename)
         
-        if (serverJar.exists()) return true
-        
-        log("server.jar not found, attempting auto-download for version ${server.version}")
-        
-        val downloadUrl = try {
-            McVersionUtils.getDownloadUrl(server.type, server.version)
-        } catch (e: Exception) {
-            log("Error resolving version URL: ${e.message}")
-            return false
-        }
+        // 1. Download Base Server if missing
+        if (!serverJar.exists()) {
+            log("$targetFilename not found, attempting auto-download for version ${server.version}")
             
-        return try {
-            _serverStatus.value = ServerStatus.INSTALLING
-            val targetPath = server.uri ?: server.path
-            installer.downloadServer(downloadUrl, targetPath, "server.jar").collect { status ->
-                when (status) {
-                    is com.lzofseven.mcserver.util.DownloadStatus.Progress -> {
-                        _downloadProgress.value = status.percentage
+            val downloadUrl = try {
+                McVersionUtils.getDownloadUrl(server.type, server.version)
+            } catch (e: Exception) {
+                log("Error resolving version URL: ${e.message}")
+                return false
+            }
+                
+            try {
+                _serverStatus.value = ServerStatus.INSTALLING
+                val targetPath = server.uri ?: server.path
+                installer.downloadServer(downloadUrl, targetPath, targetFilename).collect { status ->
+                    when (status) {
+                        is com.lzofseven.mcserver.util.DownloadStatus.Progress -> {
+                            _downloadProgress.value = status.percentage
+                        }
+                        is com.lzofseven.mcserver.util.DownloadStatus.Finished -> {
+                            log("$targetFilename downloaded successfully")
+                            _downloadProgress.value = null
+                        }
+                        is com.lzofseven.mcserver.util.DownloadStatus.Error -> {
+                            log("Error downloading $targetFilename: ${status.message}")
+                            _downloadProgress.value = null
+                            throw Exception(status.message)
+                        }
+                        else -> {}
                     }
-                    is com.lzofseven.mcserver.util.DownloadStatus.Finished -> {
-                        log("server.jar downloaded successfully")
-                        _downloadProgress.value = null
-                    }
-                    is com.lzofseven.mcserver.util.DownloadStatus.Error -> {
-                        log("Error downloading server.jar: ${status.message}")
-                        _downloadProgress.value = null
-                        throw Exception(status.message)
-                    }
-                    else -> {}
+                }
+            } catch (e: Exception) {
+                _serverStatus.value = ServerStatus.STOPPED
+                log("Auto-download failed: ${e.message}")
+                return false
+            }
+        }
+        
+        // 2. Download Geyser Plugin if Bedrock type
+        if (isBedrock) {
+            val pluginsDir = File(serverDir, "plugins")
+            if (!pluginsDir.exists()) pluginsDir.mkdirs()
+            
+            val geyserJar = File(pluginsDir, "Geyser-Spigot.jar")
+            if (!geyserJar.exists()) {
+                log("Geyser plugin not found, downloading...")
+                try {
+                     _serverStatus.value = ServerStatus.INSTALLING
+                     val geyserUrl = McVersionUtils.getGeyserUrl()
+                     // We can't easily use 'installer' for subfolders unless we create a specialized method or pass full path 
+                     // if installer accepts absolute path or relative.
+                     // Assuming installer.downloadServer takes a 'base path' (uri/path) and 'filename'. 
+                     // If it uses SAF, we might be limited to root.
+                     // However, 'installer' implementation (ServerInstaller) likely handles DocumentFile.
+                     
+                     // Workaround: Use simple OkHttp download if path is local file, or try to use installer if it supports subdirs.
+                     // Given current architecture, let's assume local file access for simplicity since we have updated RealServerManager with File().
+                     
+                     if (server.uri == null) {
+                         // Direct File Access
+                         val request = okhttp3.Request.Builder().url(geyserUrl).build()
+                         val response = OkHttpClient().newCall(request).execute()
+                         if (!response.isSuccessful) throw Exception("Failed to download Geyser")
+                         
+                         val sink = geyserJar.sink().buffer()
+                         sink.writeAll(response.body!!.source())
+                         sink.close()
+                         log("Geyser downloaded to ${geyserJar.absolutePath}")
+                     } else {
+                         // SAF - This is harder without extending Installer. 
+                         // For now, skip or warn. Or assume 'plugins' folder doesn't exist in SAF root view easily.
+                         // But we can try downloading to "Geyser-Spigot.jar" in ROOT and asking user to move it? No that's bad.
+                         // Let's just log a warning for SAF users or implement basic download.
+                         log("SAF Mode: Auto-download of Geyser into /plugins/ not fully supported yet. Please install Geyser manually.")
+                     }
+                     
+                } catch (e: Exception) {
+                    log("Failed to download Geyser: ${e.message}")
+                    // Don't block server start, just warn
+                } finally {
+                     _serverStatus.value = ServerStatus.STOPPED
+                     _downloadProgress.value = null
                 }
             }
-            _serverStatus.value = ServerStatus.STOPPED
-            true
-        } catch (e: Exception) {
-            _serverStatus.value = ServerStatus.STOPPED
-            log("Auto-download failed: ${e.message}")
-            false
         }
+
+        return true
     }
 
 

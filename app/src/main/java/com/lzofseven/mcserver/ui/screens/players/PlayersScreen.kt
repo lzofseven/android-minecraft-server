@@ -151,9 +151,9 @@ fun PlayersScreen(
                     },
                     divider = { Divider(color = Color.White.copy(alpha = 0.05f)) }
                 ) {
-                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("ONLINE (${onlinePlayers.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) })
-                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("OPERADORES", fontWeight = FontWeight.Bold, fontSize = 12.sp) })
-                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("WHITELIST", fontWeight = FontWeight.Bold, fontSize = 12.sp) })
+                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0; viewModel.refresh() }, text = { Text("ONLINE (${onlinePlayers.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) })
+                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1; viewModel.refresh() }, text = { Text("OPERADORES", fontWeight = FontWeight.Bold, fontSize = 12.sp) })
+                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2; viewModel.refresh() }, text = { Text("WHITELIST", fontWeight = FontWeight.Bold, fontSize = 12.sp) })
                 }
 
                 LazyColumn(

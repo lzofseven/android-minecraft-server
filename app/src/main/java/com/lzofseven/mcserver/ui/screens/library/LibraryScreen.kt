@@ -77,7 +77,7 @@ fun LibraryScreen(
                                 onDismissRequest = { showMenu = false },
                                 modifier = Modifier.background(SurfaceDark)
                             ) {
-                                listOf(null to "Tudo", "mod" to "Mods", "plugin" to "Plugins", "shader" to "Shaders").forEach { (type, label) ->
+                                listOf(null to "Tudo", "mod" to "Mods", "plugin" to "Plugins").forEach { (type, label) ->
                                     DropdownMenuItem(
                                         text = { Text(label, color = Color.White) },
                                         onClick = {
@@ -108,7 +108,7 @@ fun LibraryScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 8.dp),
-                    placeholder = { Text("Buscar mods, plugins, shaders...", color = Color.White.copy(alpha = 0.3f)) },
+                    placeholder = { Text("Buscar mods, plugins...", color = Color.White.copy(alpha = 0.3f)) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = PrimaryDark) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
@@ -126,7 +126,7 @@ fun LibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 16.dp, top = 8.dp)
                 ) {
-                    val filters = listOf(null to "Tudo", "mod" to "Mods", "plugin" to "Plugins", "shader" to "Shaders")
+                    val filters = listOf(null to "Tudo", "mod" to "Mods", "plugin" to "Plugins")
                     filters.forEach { (type, label) ->
                         item {
                             FilterChip(
@@ -163,7 +163,19 @@ fun LibraryScreen(
                             ImmersiveLibraryCard(
                                 item = item,
                                 progress = progress,
-                                onClick = { viewModel.downloadContent(item) }
+                                onClick = { 
+                                    // Navigate to Details
+                                    // We need to parse serverId from current route or pass it in ViewModel 
+                                    // LibraryScreen has nav arguments hidden, but NavController backstack has it?
+                                    // Better: LibraryViewModel has 'serverId'.
+                                    // But we are in Composable.
+                                    // The route is "library/{serverId}".
+                                    val currentBackStackEntry = navController.currentBackStackEntry
+                                    val serverId = currentBackStackEntry?.arguments?.getString("serverId")
+                                     if (serverId != null) {
+                                         navController.navigate(com.lzofseven.mcserver.ui.navigation.Screen.ModDetails.createRoute(serverId, item.projectId))
+                                     }
+                                }
                             )
                         }
                         

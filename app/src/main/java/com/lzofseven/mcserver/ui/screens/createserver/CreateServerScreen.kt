@@ -25,6 +25,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Add
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.lzofseven.mcserver.ui.screens.config.ServerType
@@ -87,19 +91,19 @@ fun CreateServerScreen(
 
                 Button(
                     onClick = {
-                        if (uiState.currentStep < 2) {
+                        if (uiState.currentStep < 3) {
                             viewModel.nextStep()
                         } else {
-                            viewModel.createServer {
+                            viewModel.createServer(context) {
                                 navController.popBackStack()
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryDark),
                     enabled = (uiState.currentStep != 0 || uiState.name.isNotBlank()) &&
-                              (uiState.currentStep != 2 || uiState.path.isNotBlank())
+                              (uiState.currentStep != 3 || uiState.path.isNotBlank())
                 ) {
-                    Text(if (uiState.currentStep == 2) "Criar Servidor" else "Próximo")
+                    Text(if (uiState.currentStep == 3) "Criar Servidor" else "Próximo")
                 }
             }
         }
@@ -107,7 +111,7 @@ fun CreateServerScreen(
         Column(modifier = Modifier.padding(padding).padding(horizontal = 24.dp)) {
             // Progress Indicator
             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                repeat(3) { index ->
+                repeat(4) { index ->
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -127,7 +131,8 @@ fun CreateServerScreen(
                     when (step) {
                         0 -> StepOne(uiState, viewModel)
                         1 -> StepTwo(uiState, viewModel)
-                        2 -> StepThree(uiState, viewModel, onPickFolder = { folderPickerLauncher.launch(null) })
+                        2 -> StepThree(uiState, viewModel)
+                        3 -> StepFour(uiState, viewModel, onPickFolder = { folderPickerLauncher.launch(null) })
                     }
                 }
             }
@@ -157,13 +162,17 @@ fun StepOne(state: CreateServerState, viewModel: CreateServerViewModel) {
 
     Text("Tipo de Software", style = MaterialTheme.typography.titleMedium, color = Color.White, modifier = Modifier.padding(top = 16.dp))
     
-    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
         ServerType.values().forEach { type ->
             FilterChip(
                 selected = state.type == type,
                 onClick = { viewModel.updateType(type) },
                 label = { Text(type.displayName) },
-                leadingIcon = if (state.type == type) { { Icon(Icons.Default.Check, null) } } else null,
+                leadingIcon = if (state.type == type) { { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) } } else null,
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = PrimaryDark.copy(alpha = 0.2f),
                     selectedLabelColor = PrimaryDark,
@@ -174,89 +183,156 @@ fun StepOne(state: CreateServerState, viewModel: CreateServerViewModel) {
     }
 }
 
+    }
+
+    Spacer(Modifier.height(8.dp))
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StepTwo(state: CreateServerState, viewModel: CreateServerViewModel) {
-    Text("Configuração do Mundo", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
-    
-    // Version Selector
-    var expanded by remember { mutableStateOf(false) }
-    val versions = listOf("1.21.1", "1.20.4", "1.20.1", "1.19.4", "1.18.2", "1.16.5", "1.12.2", "1.8.9")
-
-    Spacer(Modifier.height(16.dp))
-    
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = Modifier.fillMaxWidth()
+    androidx.compose.foundation.lazy.LazyColumn(
+        modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
     ) {
-        OutlinedTextField(
-            value = state.version,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Versão do Minecraft") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = PrimaryDark,
-                focusedLabelColor = PrimaryDark,
-                unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-                unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
-                cursorColor = PrimaryDark,
-                unfocusedContainerColor = SurfaceDark,
-                focusedContainerColor = SurfaceDark,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
-            ),
-            modifier = Modifier.menuAnchor().fillMaxWidth()
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(SurfaceDark)
-        ) {
-            versions.forEach { version ->
-                DropdownMenuItem(
-                    text = { Text(version, color = Color.White) },
-                    onClick = {
-                        viewModel.updateVersion(version)
-                        expanded = false
+        item {
+            Text("Configuração do Mundo", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
+        }
+
+        // --- IDENTITY SECTION ---
+        item {
+            Text("IDENTIDADE DO SERVIDOR", style = MaterialTheme.typography.labelSmall, color = PrimaryDark, fontWeight = FontWeight.Black)
+            Spacer(Modifier.height(12.dp))
+            
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val launcher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.GetContent()
+                ) { uri: Uri? ->
+                    viewModel.updateServerIcon(uri)
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(SurfaceDark, RoundedCornerShape(8.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                        .clickable { launcher.launch("image/*") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (state.serverIconUri != null) {
+                        AsyncImage(
+                            model = state.serverIconUri,
+                            contentDescription = null,
+                            modifier = androidx.compose.ui.Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(androidx.compose.material.icons.filled.AddPhotoAlternate, null, tint = Color.White.copy(alpha = 0.3f))
                     }
+                }
+                
+                Spacer(Modifier.width(16.dp))
+                
+                Column {
+                    Text("Ícone do Servidor", color = Color.White, style = MaterialTheme.typography.titleSmall)
+                    Text("Toque para selecionar", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+
+        item {
+            OutlinedTextField(
+                value = state.motd,
+                onValueChange = { viewModel.updateMotd(it) },
+                label = { Text("Descrição (MOTD)") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PrimaryDark,
+                    focusedLabelColor = PrimaryDark,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                    unfocusedContainerColor = SurfaceDark,
+                    focusedContainerColor = SurfaceDark,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                )
+            )
+            
+            Spacer(Modifier.height(8.dp))
+            Text("Pré-visualização:", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.3f))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .background(Color.Black, RoundedCornerShape(8.dp))
+                    .padding(12.dp)
+            ) {
+                Text(
+                    text = com.lzofseven.mcserver.util.MotdUtils.parseMinecraftColors(state.motd),
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
         }
-    }
 
-    Spacer(Modifier.height(24.dp))
-    
-    // Difficulty
-    Text("Dificuldade", style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.Bold)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-        listOf("Peaceful", "Easy", "Normal", "Hard").forEach { diff ->
-            FilterChip(
-                selected = state.difficulty == diff,
-                onClick = { viewModel.updateDifficulty(diff) },
-                label = { Text(diff) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = PrimaryDark.copy(alpha = 0.2f),
-                    selectedLabelColor = PrimaryDark,
-                    labelColor = Color.White
-                )
-            )
+        // --- TECHNICAL SECTION ---
+        item {
+            Text("PARÂMETROS TÉCNICOS", style = MaterialTheme.typography.labelSmall, color = PrimaryDark, fontWeight = FontWeight.Black)
         }
-    }
 
-    Spacer(Modifier.height(16.dp))
-    
-    // GameMode & Online
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Column {
-            Text("Modo de Jogo", style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.Bold)
+        item {
+            var expanded by remember { mutableStateOf(false) }
+            val versions = state.availableVersions
+
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = state.version,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Versão do Minecraft") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryDark,
+                        focusedLabelColor = PrimaryDark,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                        unfocusedContainerColor = SurfaceDark,
+                        focusedContainerColor = SurfaceDark,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.background(SurfaceDark)
+                ) {
+                    versions.forEach { version ->
+                        DropdownMenuItem(
+                            text = { Text(version, color = Color.White) },
+                            onClick = {
+                                viewModel.updateVersion(version)
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            // Difficulty
+            Text("Dificuldade", style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                listOf("Survival", "Creative").forEach { mode ->
+                listOf("Peaceful", "Easy", "Normal", "Hard").forEach { diff ->
                     FilterChip(
-                        selected = state.gameMode == mode,
-                        onClick = { viewModel.updateGameMode(mode) },
-                        label = { Text(mode) },
+                        selected = state.difficulty == diff,
+                        onClick = { viewModel.updateDifficulty(diff) },
+                        label = { Text(diff) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = PrimaryDark.copy(alpha = 0.2f),
                             selectedLabelColor = PrimaryDark,
@@ -266,43 +342,142 @@ fun StepTwo(state: CreateServerState, viewModel: CreateServerViewModel) {
                 }
             }
         }
-        
-        Column(horizontalAlignment = Alignment.End) {
-             Text("Pirata (Cracked)", style = MaterialTheme.typography.titleSmall, color = if (!state.onlineMode) PrimaryDark else Color.White.copy(0.7f), fontWeight = FontWeight.Bold)
-             Switch(
-                 checked = !state.onlineMode,
-                 onCheckedChange = { viewModel.updateOnlineMode(!it) },
-                 colors = SwitchDefaults.colors(
-                     checkedThumbColor = BackgroundDark,
-                     checkedTrackColor = PrimaryDark,
-                     uncheckedThumbColor = Color.White,
-                     uncheckedTrackColor = SurfaceDark
-                 )
-             )
+
+        item {
+            // GameMode & Online
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("Modo de Jogo", style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                        listOf("Survival", "Creative").forEach { mode ->
+                            FilterChip(
+                                selected = state.gameMode == mode,
+                                onClick = { viewModel.updateGameMode(mode) },
+                                label = { Text(mode) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = PrimaryDark.copy(alpha = 0.2f),
+                                    selectedLabelColor = PrimaryDark,
+                                    labelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+                }
+                
+                Column(horizontalAlignment = Alignment.End) {
+                     Text("Pirata (Cracked)", style = MaterialTheme.typography.titleSmall, color = if (!state.onlineMode) PrimaryDark else Color.White.copy(0.7f), fontWeight = FontWeight.Bold)
+                     Switch(
+                         checked = !state.onlineMode,
+                         onCheckedChange = { viewModel.updateOnlineMode(!it) },
+                         colors = SwitchDefaults.colors(
+                             checkedThumbColor = BackgroundDark,
+                             checkedTrackColor = PrimaryDark,
+                             uncheckedThumbColor = Color.White,
+                             uncheckedTrackColor = SurfaceDark
+                         )
+                     )
+                }
+            }
+        }
+
+        item {
+            // RAM
+            val gb = state.ramAllocation / 1024f
+            Text("Alocação de RAM: ${String.format("%.1f", gb)} GB", color = Color.White, fontWeight = FontWeight.Bold)
+            Text("Recomendado: 2.0GB+ para versões 1.18+", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.5f))
+            
+            Slider(
+                value = state.ramAllocation.toFloat(),
+                onValueChange = { viewModel.updateRam(it.toInt()) },
+                valueRange = 1024f..8192f,
+                steps = 13, // 0.5GB steps approx
+                colors = SliderDefaults.colors(thumbColor = PrimaryDark, activeTrackColor = PrimaryDark, inactiveTrackColor = Color.White.copy(0.1f))
+            )
         }
     }
 
-    Spacer(modifier = Modifier.height(24.dp))
+@Composable
+fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
+    var query by remember { mutableStateOf("") }
     
-    // RAM
-    val gb = state.ramAllocation / 1024f
-    Text("Alocação de RAM: ${String.format("%.1f", gb)} GB", color = Color.White, fontWeight = FontWeight.Bold)
-    Text("Recomendado: 2.0GB+ para versões 1.18+", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.5f))
-    
-    Slider(
-        value = state.ramAllocation.toFloat(),
-        onValueChange = { viewModel.updateRam(it.toInt()) },
-        valueRange = 1024f..8192f,
-        steps = 13, // 0.5GB steps approx
-        colors = SliderDefaults.colors(thumbColor = PrimaryDark, activeTrackColor = PrimaryDark, inactiveTrackColor = Color.White.copy(0.1f))
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Explorar Biblioteca", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
+        Text("Adicione mods ou plugins agora para começar com tudo!", color = Color.White.copy(0.7f))
+
+        OutlinedTextField(
+            value = query,
+            onValueChange = { 
+                query = it
+                viewModel.searchLibrary(it)
+            },
+            placeholder = { Text("Buscar mods...") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            leadingIcon = { Icon(androidx.compose.material.icons.filled.Search, null, tint = PrimaryDark) },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = PrimaryDark,
+                unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                unfocusedContainerColor = SurfaceDark,
+                focusedContainerColor = SurfaceDark,
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White
+            )
+        )
+
+        if (state.isSearching) {
+            Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = PrimaryDark)
+            }
+        } else {
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier.fillMaxWidth().height(300.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                androidx.compose.foundation.lazy.items(state.libraryResults) { item ->
+                    val isQueued = state.queuedContent.any { it.projectId == item.projectId }
+                    Surface(
+                        onClick = { viewModel.toggleModQueue(item) },
+                        color = if (isQueued) PrimaryDark.copy(0.1f) else SurfaceDark,
+                        shape = RoundedCornerShape(12.dp),
+                        border = if (isQueued) androidx.compose.foundation.BorderStroke(1.dp, PrimaryDark) else null,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            AsyncImage(
+                                model = item.iconUrl ?: "https://lh3.googleusercontent.com/aida-public/AB6AXuCwfrVy1tVAb2P64nfILPuylYzDWefOwHF251qSRzEp0xrLw1zRuRyS1TwbUVGstZ7Hd1h2lbIWTmme9atM1kDq7MA2HuNRk_yVkIXPkN8VK6On77IKdxXB2_HoP2CAXvSMbAAMV_Q_ixgnlis_A-slL40GFyzmbuW1fEzujtubzwlNfDK6OeB8ZUzFj6yTwMyXVU2ii1r9OgmjVTSm1WxffLOFkgNmowvuLCfRgynW10vEv7kq7F42ttsHnsnXYjJtlLUCJYlNBi_p",
+                                contentDescription = null,
+                                modifier = Modifier.size(40.dp).androidx.compose.ui.draw.clip(RoundedCornerShape(8.dp))
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(item.title, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text(item.description, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.6f), maxLines = 1)
+                            }
+                            if (isQueued) {
+                                Icon(Icons.Default.Check, null, tint = PrimaryDark)
+                            } else {
+                                Icon(androidx.compose.material.icons.filled.Add, null, tint = Color.White.copy(0.3f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (state.queuedContent.isNotEmpty()) {
+            Text("${state.queuedContent.size} itens selecionados", color = PrimaryDark, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        }
+    }
 }
 
 @Composable
-fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel, onPickFolder: () -> Unit) {
+fun StepFour(state: CreateServerState, viewModel: CreateServerViewModel, onPickFolder: () -> Unit) {
     Text("Instalação", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
     Text("Escolha onde os arquivos do servidor serão vistos e salvos.", color = Color.White.copy(alpha = 0.7f))
     
+    Spacer(Modifier.height(16.dp))
+
     Card(
         modifier = Modifier
             .fillMaxWidth()

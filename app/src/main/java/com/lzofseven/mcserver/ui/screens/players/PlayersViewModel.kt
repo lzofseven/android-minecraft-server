@@ -47,10 +47,10 @@ class PlayersViewModel @Inject constructor(
     val gameMode: StateFlow<String> = _gameMode.asStateFlow()
 
     init {
-        loadAll()
+        refresh()
     }
 
-    private fun loadAll() {
+    fun refresh() {
         viewModelScope.launch {
             _ops.value = playerManager.getOps()
             _whitelist.value = playerManager.getWhitelist()

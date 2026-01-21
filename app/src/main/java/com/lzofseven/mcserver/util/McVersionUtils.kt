@@ -26,6 +26,40 @@ object McVersionUtils {
         }
     }
 
+    fun getSupportedVersions(type: String): List<String> {
+        val majorVersions = listOf(
+            "1.21.1", "1.21", "1.20.6", "1.20.4", "1.20.2", "1.20.1",
+            "1.19.4", "1.19.3", "1.19.2", 
+            "1.18.2", "1.18.1", 
+            "1.17.1", 
+            "1.16.5", 
+            "1.15.2", 
+            "1.14.4", 
+            "1.13.2", 
+            "1.12.2", 
+            "1.8.9", "1.8.8"
+        )
+
+        return when (type.lowercase()) {
+            "vanilla", "paper" -> majorVersions
+            "fabric" -> majorVersions // Fabric supports most modern versions
+            "forge" -> listOf(
+                "1.20.6", "1.20.4", "1.20.2", "1.20.1",
+                "1.19.4", "1.19.2",
+                "1.18.2",
+                "1.16.5",
+                "1.15.2",
+                "1.14.4",
+                "1.12.2",
+                "1.8.9"
+            )
+            "neoforge" -> listOf("1.21.1", "1.21", "1.20.6", "1.20.4", "1.20.2", "1.20.1")
+            "pocketmine" -> listOf("Latest")
+            "bedrock" -> listOf("1.21.60.04", "1.21.50.29") // Hardcoded recent stable BDS for reference
+            else -> emptyList()
+        }
+    }
+
     suspend fun getDownloadUrl(type: String, version: String): String = withContext(Dispatchers.IO) {
         when (type.lowercase()) {
             "vanilla" -> getVanillaUrl(version)
@@ -33,6 +67,8 @@ object McVersionUtils {
             "fabric" -> getFabricUrl(version)
             "forge" -> getForgeUrl(version)
             "neoforge" -> getNeoForgeUrl(version)
+            "pocketmine" -> getPocketMineUrl(version)
+            "bedrock" -> getBedrockUrl(version)
             else -> throw IllegalArgumentException("Unsupported server type: $type")
         }
     }
@@ -214,6 +250,26 @@ object McVersionUtils {
              e.printStackTrace()
              throw Exception("Failed to fetch NeoForge URL for $version: ${e.message}")
         }
+    }
+    
+    private fun getPocketMineUrl(version: String): String {
+        // PocketMine-MP usually auto-updates or uses a generic "latest" URL.
+        // For specific versions, we'd need to look up GitHub releases.
+        // For now, we'll support "Latest" and specific tags if needed.
+        if (version.lowercase() == "latest" || version.isEmpty()) {
+            return "https://github.com/pmmp/PocketMine-MP/releases/latest/download/PocketMine-MP.phar"
+        }
+        return "https://github.com/pmmp/PocketMine-MP/releases/download/$version/PocketMine-MP.phar"
+    }
+
+    private fun getBedrockUrl(version: String): String {
+        // Type BEDROCK in our enum means "Paper with Geyser".
+        // So we return the Paper URL for the given version.
+        return getPaperUrl(version)
+    }
+    
+    fun getGeyserUrl(): String {
+        return "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
     }
     
     // -- Version Comparison Logic --

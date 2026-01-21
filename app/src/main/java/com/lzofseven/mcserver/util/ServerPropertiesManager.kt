@@ -34,7 +34,7 @@ class ServerPropertiesManager(private val context: Context, private val path: St
 
     suspend fun load(): Map<String, String> = withContext(Dispatchers.IO) {
         try {
-            getInputStream()?.use { properties.load(it) }
+            getInputStream()?.use { it.bufferedReader(Charsets.UTF_8).use { reader -> properties.load(reader) } }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -48,7 +48,9 @@ class ServerPropertiesManager(private val context: Context, private val path: St
         try {
             if (path.startsWith("content://")) {
                 getOutputStream()?.use { 
-                    properties.store(it, "Minecraft Server Properties - Updated by MC Server Manager") 
+                    it.writer(Charsets.UTF_8).use { writer ->
+                        properties.store(writer, "Minecraft Server Properties - Updated by MC Server Manager")
+                    }
                 }
             } else {
                 val file = File(path, "server.properties")
@@ -58,7 +60,9 @@ class ServerPropertiesManager(private val context: Context, private val path: St
                 
                 // Use FileOutputStream directly to ensure disk write
                 java.io.FileOutputStream(file).use { fos ->
-                    properties.store(fos, "Minecraft Server Properties - Updated by MC Server Manager")
+                    fos.writer(Charsets.UTF_8).use { writer ->
+                        properties.store(writer, "Minecraft Server Properties - Updated by MC Server Manager")
+                    }
                     fos.fd.sync() // Force sync to disk
                 }
                 android.util.Log.d("ServerPropertiesManager", "Saved properties to ${file.absolutePath}")

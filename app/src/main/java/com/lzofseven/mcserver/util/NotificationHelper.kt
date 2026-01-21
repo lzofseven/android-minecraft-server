@@ -121,8 +121,8 @@ class NotificationHelper @Inject constructor(
         }
     }
 
-    fun updateLiveStats(players: String, cpu: String, ram: String) {
-        val message = "Jogadores: $players | CPU: $cpu | RAM: $ram"
+    fun updateLiveStats(onlinePlayers: Int, maxPlayers: Int, cpu: String, ram: String) {
+        val message = "Jogadores: $onlinePlayers/$maxPlayers | CPU: $cpu | RAM: $ram"
         val builder = NotificationCompat.Builder(context, CHANNEL_STATUS)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setLargeIcon(getAppIconInfo())

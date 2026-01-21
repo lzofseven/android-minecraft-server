@@ -20,6 +20,11 @@ interface ModrinthService {
         @Query("loaders") loaders: String? = null,
         @Query("game_versions") gameVersions: String? = null
     ): List<com.lzofseven.mcserver.data.model.ModrinthVersion>
+
+    @retrofit2.http.GET("v2/project/{id}")
+    suspend fun getProject(
+        @retrofit2.http.Path("id") id: String
+    ): com.lzofseven.mcserver.data.model.ModrinthProject
     
     companion object {
         const val BASE_URL = "https://api.modrinth.com/"

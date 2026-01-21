@@ -81,9 +81,11 @@ fun ConfigScreen(
             ) {
                 // Server Engine Section
                 ConfigSection(title = "MOTOR DO SERVIDOR", icon = Icons.Default.Settings) {
-                    Row(
+                    androidx.compose.foundation.layout.FlowRow(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        maxItemsInEachRow = 3
                     ) {
                         ServerType.values().forEach { type ->
                             Surface(
@@ -91,14 +93,18 @@ fun ConfigScreen(
                                 color = if (serverType == type) PrimaryDark else Color.White.copy(alpha = 0.05f),
                                 shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(1.dp, if (serverType == type) PrimaryDark else Color.White.copy(alpha = 0.1f)),
-                                modifier = Modifier.weight(1f).height(48.dp)
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .widthIn(min = 100.dp)
+                                    .height(48.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(
                                         type.displayName,
                                         fontWeight = FontWeight.Black,
                                         fontSize = 11.sp,
-                                        color = if (serverType == type) BackgroundDark else Color.White.copy(alpha = 0.6f)
+                                        color = if (serverType == type) BackgroundDark else Color.White.copy(alpha = 0.6f),
+                                        modifier = Modifier.padding(horizontal = 8.dp)
                                     )
                                 }
                             }

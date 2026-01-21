@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -92,6 +93,68 @@ fun ServerManagementScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            // Server Icon Section
+            ManagementSection(title = "ÍCONE DO SERVIDOR", icon = Icons.Default.Public) {
+                val iconPath by viewModel.serverIconPath.collectAsState()
+                val iconUpdate by viewModel.serverIconUpdate.collectAsState()
+                var iconBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+                
+                LaunchedEffect(iconPath, iconUpdate) {
+                    if (iconPath != null) {
+                        try {
+                            val file = java.io.File(iconPath!!)
+                            if (file.exists()) {
+                                iconBitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                            }
+                        } catch (e: Exception) { e.printStackTrace() }
+                    }
+                }
+
+                val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+                    contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                ) { uri: android.net.Uri? ->
+                    uri?.let { viewModel.setServerIcon(it) }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .background(Color.Black, RoundedCornerShape(4.dp))
+                            .clickable { launcher.launch("image/*") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (iconBitmap != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = iconBitmap!!.asImageBitmap(),
+                                contentDescription = "Server Icon",
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Text("64x64", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    
+                    Spacer(Modifier.width(16.dp))
+                    
+                    Column {
+                        Button(
+                            onClick = { launcher.launch("image/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Selecionar Imagem", color = Color.White)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "A imagem será redimensionada para 64x64px.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            }
+
             // Identity and Network Section
             ManagementSection(title = "IDENTIFICAÇÃO E REDE", icon = Icons.Default.Dns) {
                 // MOTD Creator Toolbar

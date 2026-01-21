@@ -68,26 +68,46 @@ class LibraryViewModel @Inject constructor(
             val server = serverRepository.getServerById(serverId) ?: return@launch
             _isLoading.value = true
             try {
-                // 1. Fetch versions
-                val versions = modrinthRepository.getVersions(item.projectId)
+                // Determine Loader & Version
+                val loader = when(server.type.lowercase()) {
+                    "fabric" -> "fabric"
+                    "forge" -> "forge"
+                    "neoforge" -> "neoforge"
+                    "paper", "spigot", "bukkit" -> "paper" // Modrinth often uses 'paper' or 'bukkit' for plugins
+                    else -> null // Vanilla or unknown
+                }
+                
+                // 1. Fetch versions with filters
+                val versions = modrinthRepository.getVersions(
+                    projectId = item.projectId,
+                    loader = loader,
+                    gameVersion = server.version
+                )
+                
                 if (versions.isEmpty()) {
-                    _toastMessage.emit("Nenhuma versão compatível encontrada.")
+                    _toastMessage.emit("Nenhuma versão compatível encontrada para ${server.type} ${server.version}.")
                     return@launch
                 }
 
-                // 2. Select latest version (for now, will add UI for version selection later)
+                // 2. Select latest version
+                // The API usually returns sorted, but we can double check logic if needed.
                 val latestVersion = versions.first()
+                
+                if (latestVersion.files.isEmpty()) {
+                    _toastMessage.emit("Erro: A versão encontrada não contém arquivos.")
+                    return@launch
+                }
+                
                 val file = latestVersion.files.find { it.primary } ?: latestVersion.files.first()
 
                 // 3. Determine folder
                 val folderName = when {
                     item.projectType == "mod" -> "mods"
                     item.projectType == "plugin" -> "plugins"
-                    item.projectType == "shader" -> "shaderpacks"
-                    else -> "downloads"
+                    else -> "" // Root or downloads?
                 }
                 
-                val targetDir = java.io.File(server.path, folderName)
+                val targetDir = if (folderName.isNotEmpty()) java.io.File(server.path, folderName) else java.io.File(server.path)
                 if (!targetDir.exists()) targetDir.mkdirs()
                 
                 val targetFile = java.io.File(targetDir, file.filename)
@@ -97,7 +117,9 @@ class LibraryViewModel @Inject constructor(
                 val response = client.newCall(request).execute()
                 
                 if (response.isSuccessful) {
-                    val body = response.body ?: throw Exception("Corpo da resposta vazio")
+                    val body = response.body
+                    if (body == null) throw Exception("Corpo da resposta vazio (Body is null)")
+                    
                     val totalBytes = body.contentLength()
                     var bytesDownloaded = 0L
 
@@ -122,10 +144,13 @@ class LibraryViewModel @Inject constructor(
                     }
                     _toastMessage.emit("Sucesso: ${file.filename} instalado! Reinicie o servidor.")
                 } else {
-                    _toastMessage.emit("Erro no download: ${response.code}")
+                    _toastMessage.emit("Erro no download: Code ${response.code}")
                 }
             } catch (e: Exception) {
-                _toastMessage.emit("Falha no download: ${e.message}")
+                e.printStackTrace()
+                // Explicitly show null message as string
+                val msg = e.message ?: "Erro desconhecido (${e.javaClass.simpleName})"
+                _toastMessage.emit("Falha no download: $msg")
             } finally {
                 _isLoading.value = false
             }

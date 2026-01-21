@@ -110,7 +110,7 @@ fun DashboardScreen(
 
                     // Hero Card (Status Mundo)
                     item {
-                        val motd = (properties["motd"] ?: "A Minecraft Server").replace('§', '&')
+                        val motd = properties["motd"] ?: "A Minecraft Server"
                         HeroStatusCard(
                             serverStatus = serverStatus,
                             onToggle = { viewModel.toggleServer() },
@@ -137,7 +137,8 @@ fun DashboardScreen(
                     item {
                         PerformanceStatsSection(
                             serverStats = serverStats,
-                            ramLimitGb = (serverEntity?.ramAllocationMB ?: 2048) / 1024.0
+                            ramLimitGb = (serverEntity?.ramAllocationMB ?: 2048) / 1024.0,
+                            onRamClick = { navController.navigate(Screen.Config.createRoute(serverEntity!!.id)) }
                         )
                     }
 
@@ -304,6 +305,11 @@ fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName:
                              Spacer(Modifier.width(8.dp))
                              Text("INICIANDO...", fontWeight = FontWeight.Black, color = BackgroundDark)
                         }
+                        ServerStatus.STOPPING -> {
+                             CircularProgressIndicator(modifier = Modifier.size(24.dp), color = BackgroundDark, strokeWidth = 2.dp)
+                             Spacer(Modifier.width(8.dp))
+                             Text("PARANDO...", fontWeight = FontWeight.Black, color = BackgroundDark)
+                        }
                         else -> {
                             Icon(if(serverStatus == ServerStatus.STOPPED) Icons.Default.PlayArrow else Icons.Default.Stop, null, tint = BackgroundDark)
                             Spacer(Modifier.width(8.dp))
@@ -322,7 +328,11 @@ fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName:
 }
 
 @Composable
-fun PerformanceStatsSection(serverStats: com.lzofseven.mcserver.core.execution.RealServerManager.ServerStats, ramLimitGb: Double) {
+fun PerformanceStatsSection(
+    serverStats: com.lzofseven.mcserver.core.execution.RealServerManager.ServerStats, 
+    ramLimitGb: Double,
+    onRamClick: () -> Unit
+) {
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("DESEMPENHO", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f), fontWeight = FontWeight.Black, letterSpacing = 2.sp)
@@ -347,15 +357,26 @@ fun PerformanceStatsSection(serverStats: com.lzofseven.mcserver.core.execution.R
                 icon = Icons.Default.Storage,
                 color = Color(0xFFAB47BC), // Purple
                 usage = (serverStats.ram / ramLimitGb).coerceIn(0.0, 1.0),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                onClick = onRamClick
             )
         }
     }
 }
 
 @Composable
-fun StatCard(title: String, value: String, unit: String, icon: androidx.compose.ui.graphics.vector.ImageVector, color: Color, usage: Double, modifier: Modifier = Modifier) {
+fun StatCard(
+    title: String, 
+    value: String, 
+    unit: String, 
+    icon: androidx.compose.ui.graphics.vector.ImageVector, 
+    color: Color, 
+    usage: Double, 
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {}
+) {
     Surface(
+        onClick = onClick,
         modifier = modifier.height(140.dp),
         color = SurfaceDark,
         shape = RoundedCornerShape(20.dp),
@@ -373,6 +394,63 @@ fun StatCard(title: String, value: String, unit: String, icon: androidx.compose.
             }
             Spacer(Modifier.weight(1f))
             HeartbeatGraph(color = color, usage = usage, modifier = Modifier.fillMaxWidth().height(40.dp))
+        }
+    }
+}
+
+@Composable
+fun MiniConsoleSection(
+    logs: List<String>, 
+    serverStatus: ServerStatus, 
+    onSeeConsole: () -> Unit,
+    onStartServer: () -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("LOGS RECENTES", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f), fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Text("Ver Console", style = MaterialTheme.typography.labelSmall, color = PrimaryDark, modifier = Modifier.clickable { onSeeConsole() })
+        }
+        Spacer(Modifier.height(12.dp))
+        
+        Surface(
+            color = Color.Black.copy(alpha = 0.4f),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (logs.isEmpty()) {
+                    if (serverStatus == ServerStatus.STOPPED) {
+                        Column(
+                             modifier = Modifier.fillMaxWidth().padding(16.dp),
+                             horizontalAlignment = Alignment.CenterHorizontally,
+                             verticalArrangement = Arrangement.Center
+                        ) {
+                             Icon(Icons.Default.Terminal, null, tint = Color.White.copy(alpha = 0.3f), modifier = Modifier.size(32.dp))
+                             Spacer(Modifier.height(8.dp))
+                             Text("O servidor está desligado.", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodyMedium)
+                             Spacer(Modifier.height(16.dp))
+                             Button(
+                                 onClick = onStartServer,
+                                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryDark),
+                                 shape = RoundedCornerShape(12.dp)
+                             ) {
+                                  Icon(Icons.Default.PlayArrow, null, tint = BackgroundDark)
+                                  Spacer(Modifier.width(8.dp))
+                                  Text("INICIAR AGORA", color = BackgroundDark, fontWeight = FontWeight.Bold)
+                             }
+                        }
+                    } else {
+                         Text("Aguardando logs...", color = Color.White.copy(alpha = 0.3f), style = MaterialTheme.typography.labelSmall)
+                    }
+                } else {
+                    logs.takeLast(3).forEach { logLine ->
+                        val time = if (logLine.startsWith("[")) logLine.substringBefore("]") + "]" else ""
+                        val msg = if (logLine.startsWith("[")) logLine.substringAfter("] ") else logLine
+                        ConsoleLogLine(time, msg)
+                    }
+                }
+            }
         }
     }
 }
@@ -578,7 +656,7 @@ fun BottomNavItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: 
 @Composable
 fun InstallationProgressCard(progress: Int) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp), // Increased padding to match other cards
         colors = CardDefaults.cardColors(containerColor = PrimaryDark.copy(alpha = 0.1f)),
         border = BorderStroke(1.dp, PrimaryDark.copy(alpha = 0.2f))
     ) {

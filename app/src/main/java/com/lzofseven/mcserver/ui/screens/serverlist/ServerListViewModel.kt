@@ -18,6 +18,9 @@ class ServerListViewModel @Inject constructor(
     private val realServerManager: com.lzofseven.mcserver.core.execution.RealServerManager,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
+    
+    private val _icons = kotlinx.coroutines.flow.MutableStateFlow<Map<String, android.graphics.Bitmap?>>(emptyMap())
+    val icons = _icons.asStateFlow()
 
     val onlineCount: StateFlow<Int> = realServerManager.runningServerCount
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -38,12 +41,22 @@ class ServerListViewModel @Inject constructor(
                 val newMotds = serverList.associate { server ->
                     server.id to try {
                         val props = com.lzofseven.mcserver.util.ServerPropertiesManager(context, server.path).load()
-                        (props["motd"] ?: "A Minecraft Server").replace('§', '&')
+                        props["motd"] ?: "A Minecraft Server"
                     } catch (e: Exception) {
                         "A Minecraft Server"
                     }
                 }
                 _motds.value = newMotds
+
+                val newIcons = serverList.associate { server ->
+                    server.id to try {
+                        val iconFile = java.io.File(server.path, "server-icon.png")
+                        if (iconFile.exists()) {
+                            android.graphics.BitmapFactory.decodeFile(iconFile.absolutePath)
+                        } else null
+                    } catch (e: Exception) { null }
+                }
+                _icons.value = newIcons
             }
         }
     }

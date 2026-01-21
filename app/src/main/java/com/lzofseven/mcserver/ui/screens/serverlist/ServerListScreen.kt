@@ -42,6 +42,7 @@ fun ServerListScreen(
     val servers by viewModel.servers.collectAsState()
     val onlineCount by viewModel.onlineCount.collectAsState()
     val motds by viewModel.motds.collectAsState()
+    val icons by viewModel.icons.collectAsState()
 
     Box(modifier = Modifier.fillMaxSize().background(BackgroundDarkV2)) {
         // Pixel Background Effect (Simulated)
@@ -124,6 +125,7 @@ fun ServerListScreen(
                         ServerItemCardV2(
                             server = server,
                             motd = motds[server.id] ?: "Carregando...",
+                            icon = icons[server.id],
                             isOnline = viewModel.isServerRunning(server.id)
                         ) {
                             navController.navigate("dashboard/${server.id}")
@@ -220,7 +222,7 @@ fun StatusBadgeV2(text: String, isOnline: Boolean, icon: androidx.compose.ui.gra
 }
 
 @Composable
-fun ServerItemCardV2(server: MCServerEntity, motd: String, isOnline: Boolean, onClick: () -> Unit) {
+fun ServerItemCardV2(server: MCServerEntity, motd: String, icon: android.graphics.Bitmap?, isOnline: Boolean, onClick: () -> Unit) {
 
     Box(modifier = Modifier
         .fillMaxWidth()
@@ -246,12 +248,21 @@ fun ServerItemCardV2(server: MCServerEntity, motd: String, isOnline: Boolean, on
                     modifier = Modifier.fillMaxSize()
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            server.name.take(1).uppercase(),
-                            color = if(isOnline) EmeraldPrimary else Color.Gray,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 32.sp
-                        )
+                        if (icon != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = androidx.compose.ui.graphics.asImageBitmap(icon),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Text(
+                                server.name.take(1).uppercase(),
+                                color = if (isOnline) EmeraldPrimary else Color.Gray,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 32.sp
+                            )
+                        }
                     }
                 }
                 if (isOnline) {
