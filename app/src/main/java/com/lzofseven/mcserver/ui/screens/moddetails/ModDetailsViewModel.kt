@@ -83,10 +83,21 @@ class ModDetailsViewModel @Inject constructor(
                 val allVers = versionsDeferred.await()
                 _allVersions.value = allVers
                 
-                // Extract unique game versions, sorted descending
+                // Extract unique game versions, filtered to official releases only, sorted descending
                 val gameVersions = allVers
                     .flatMap { it.gameVersions }
                     .distinct()
+                    .filter { v ->
+                        // Only keep official releases (e.g., "1.21", "1.20.4")
+                        // Exclude snapshots, pre-releases, release candidates, alpha, beta
+                        !v.contains("snapshot", ignoreCase = true) &&
+                        !v.contains("pre", ignoreCase = true) &&
+                        !v.contains("rc", ignoreCase = true) &&
+                        !v.contains("alpha", ignoreCase = true) &&
+                        !v.contains("beta", ignoreCase = true) &&
+                        !v.contains("w", ignoreCase = true) && // Weekly snapshots like "24w10a"
+                        v.matches(Regex("^[0-9]+\\.[0-9]+(\\.[0-9]+)?$")) // Must match X.Y or X.Y.Z format
+                    }
                     .sortedByDescending { v ->
                         // Sort by numeric version parts
                         v.split(".").mapNotNull { it.toIntOrNull() }.joinToString(".") { String.format("%03d", it) }

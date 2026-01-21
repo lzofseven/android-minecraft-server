@@ -92,39 +92,57 @@ fun ModDetailsScreen(
                         }
                     }
 
-                    // Version Filter
+                    // Version Filter Dropdown
                     if (availableGameVersions.size > 1) {
                         item {
+                            var expanded by remember { mutableStateOf(false) }
+                            
                             Column {
                                 Text("Filtrar por Versão", style = MaterialTheme.typography.titleSmall, color = Color.White.copy(0.7f), modifier = Modifier.padding(top = 8.dp))
                                 Spacer(Modifier.height(8.dp))
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                
+                                ExposedDropdownMenuBox(
+                                    expanded = expanded,
+                                    onExpandedChange = { expanded = !expanded },
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    // "All" chip
-                                    FilterChip(
-                                        selected = selectedGameVersion == null,
-                                        onClick = { viewModel.selectGameVersion(null) },
-                                        label = { Text("Todas (${viewModel.versions.value.count { selectedGameVersion == null } ?: availableGameVersions.size})") },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = PrimaryDark.copy(0.2f),
-                                            selectedLabelColor = PrimaryDark,
-                                            labelColor = Color.White.copy(0.7f)
+                                    OutlinedTextField(
+                                        value = selectedGameVersion ?: "Todas as Versões",
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = PrimaryDark,
+                                            unfocusedBorderColor = Color.White.copy(0.2f),
+                                            focusedContainerColor = SurfaceDark,
+                                            unfocusedContainerColor = SurfaceDark,
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White
                                         )
                                     )
-                                    // Version chips (all available versions)
-                                    availableGameVersions.forEach { version ->
-                                        FilterChip(
-                                            selected = selectedGameVersion == version,
-                                            onClick = { viewModel.selectGameVersion(version) },
-                                            label = { Text(version) },
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                selectedContainerColor = PrimaryDark.copy(0.2f),
-                                                selectedLabelColor = PrimaryDark,
-                                                labelColor = Color.White.copy(0.7f)
-                                            )
+                                    ExposedDropdownMenu(
+                                        expanded = expanded,
+                                        onDismissRequest = { expanded = false },
+                                        modifier = Modifier.background(SurfaceDark)
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Todas as Versões (${viewModel.versions.value.size})", color = Color.White) },
+                                            onClick = {
+                                                viewModel.selectGameVersion(null)
+                                                expanded = false
+                                            }
                                         )
+                                        availableGameVersions.forEach { version ->
+                                            DropdownMenuItem(
+                                                text = { Text(version, color = Color.White) },
+                                                onClick = {
+                                                    viewModel.selectGameVersion(version)
+                                                    expanded = false
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
