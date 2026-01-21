@@ -35,6 +35,9 @@ class RealServerManager @Inject constructor(
     // Players Stream: Map<ServerID, Flow<List<String>>>
     private val _onlinePlayers = ConcurrentHashMap<String, MutableStateFlow<List<String>>>()
 
+    private val _opsUpdateEvent = MutableSharedFlow<Unit>(replay = 1)
+    val opsUpdateEvent: SharedFlow<Unit> = _opsUpdateEvent.asSharedFlow()
+
     fun getConsoleFlow(serverId: String): SharedFlow<String> {
         return _consoleStreams.getOrPut(serverId) { MutableSharedFlow(replay = 50) }.asSharedFlow()
     }
@@ -45,9 +48,8 @@ class RealServerManager @Inject constructor(
 
     fun logToConsole(serverId: String, message: String) {
         val flow = _consoleStreams.getOrPut(serverId) { MutableSharedFlow(replay = 50) }
-        val timestamp = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
         scope.launch {
-            flow.emit("[$timestamp] $message")
+            flow.emit(message)
         }
     }
 
@@ -185,6 +187,12 @@ class RealServerManager @Inject constructor(
                             if (joinMatch != null) {
                                 val playerName = joinMatch.groupValues[1]
                                 addPlayer(server.id, playerName)
+                                notificationHelper.showNotification(
+                                    NotificationHelper.CHANNEL_PLAYERS,
+                                    200 + playerName.hashCode(), 
+                                    "Jogador Conectado",
+                                    "$playerName entrou no servidor."
+                                )
                             }
                             
                             // Parse 'left the game'
@@ -194,7 +202,13 @@ class RealServerManager @Inject constructor(
                                 removePlayer(server.id, playerName)
                             }
                             
-                            // Parse 'UUID of player' (optional, for verification)
+                            // Parse 'Made <player> a server operator' or 'Deopped <player>'
+                            if (logLine.contains("Made") && logLine.contains("a server operator")) {
+                                _opsUpdateEvent.emit(Unit)
+                            }
+                            if (logLine.contains("Deopped")) {
+                                _opsUpdateEvent.emit(Unit)
+                            }
                         }
                     }
                 } catch (e: Exception) {

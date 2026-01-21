@@ -285,9 +285,8 @@ fun ServerItemCardV2(server: MCServerEntity, motd: String, isOnline: Boolean, on
                 }
                 
                 Text(
-                    text = motd,
+                    text = com.lzofseven.mcserver.util.MotdUtils.parseMinecraftColors(motd),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.5f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp)

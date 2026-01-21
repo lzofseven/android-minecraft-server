@@ -20,6 +20,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -113,7 +114,8 @@ fun DashboardScreen(
                         HeroStatusCard(
                             serverStatus = serverStatus,
                             onToggle = { viewModel.toggleServer() },
-                            serverName = motd // Show MOTD as requested
+                            serverName = serverEntity?.name ?: "Server",
+                            motd = motd
                         )
                     }
 
@@ -236,7 +238,7 @@ fun HeaderButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick:
 }
 
 @Composable
-fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName: String) {
+fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName: String, motd: String) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(24.dp)),
         colors = CardDefaults.cardColors(containerColor = SurfaceDark),
@@ -271,7 +273,12 @@ fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName:
             
             Column(modifier = Modifier.padding(24.dp)) {
                 Text("Status do Mundo", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, color = Color.White)
-                Text("Pronto para iniciar sua aventura?", color = Color.White.copy(alpha = 0.6f))
+                Text(
+                    text = com.lzofseven.mcserver.util.MotdUtils.parseMinecraftColors(motd), 
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Spacer(Modifier.height(20.dp))
                 
                 Button(

@@ -343,8 +343,12 @@ class DashboardViewModel @Inject constructor(
         
         log("server.jar not found, attempting auto-download for version ${server.version}")
         
-        val downloadUrl = getPaperDownloadUrl(server.version) 
-            ?: "https://api.papermc.io/v2/projects/paper/versions/1.20.1/builds/196/downloads/paper-1.20.1-196.jar" // Fallback to a valid default if version unknown
+        val downloadUrl = try {
+            McVersionUtils.getDownloadUrl(server.type, server.version)
+        } catch (e: Exception) {
+            log("Error resolving version URL: ${e.message}")
+            return false
+        }
             
         return try {
             _serverStatus.value = ServerStatus.INSTALLING
@@ -375,9 +379,6 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private fun getPaperDownloadUrl(version: String): String {
-        return McVersionUtils.getPaperDownloadUrl(version)
-    }
 
     fun dismissPermissionDialog() {
         _showPermissionDialog.value = false
