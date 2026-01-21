@@ -19,6 +19,7 @@ import java.io.File
 @HiltViewModel
 class ModsViewModel @Inject constructor(
     private val repository: ServerRepository,
+    private val modrinthRepository: com.lzofseven.mcserver.data.repository.ModrinthRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     
@@ -194,29 +195,74 @@ class ModsViewModel @Inject constructor(
         }
     }
 
-    private fun loadFromDir(dir: File, type: String): List<InstalledContent> {
+    private val metadataCache = mutableMapOf<String, InstalledContent>()
+
+    private suspend fun loadFromDir(dir: File, type: String): List<InstalledContent> {
         if (!dir.exists()) return emptyList()
-        return (dir.listFiles() ?: emptyArray())
+        val files = (dir.listFiles() ?: emptyArray())
             .filter { it.isFile && (it.name.endsWith(".jar") || it.name.endsWith(".jar.disabled") || it.name.endsWith(".phar") || it.name.endsWith(".phar.disabled")) }
-            .map { file ->
-                val isEnabled = !file.name.endsWith(".disabled")
-                val fileName = file.name
-                
-                // Extract metadata
-                val meta = extractMetadata(file)
-                
-                InstalledContent(
-                    id = meta.id ?: fileName,
-                    name = meta.name ?: (if (isEnabled) fileName else fileName.removeSuffix(".disabled")),
-                    author = meta.author ?: "Autor Desconhecido",
-                    version = meta.version ?: "N/A",
-                    fileName = fileName,
-                    type = type,
-                    isEnabled = isEnabled,
-                    fullPath = file.absolutePath,
-                    description = meta.description
-                )
+        
+        return files.map { file ->
+            val fileName = file.name
+            val isEnabled = !fileName.endsWith(".disabled")
+            
+            // Try cache first
+            metadataCache[file.absolutePath]?.let { return@map it.copy(isEnabled = isEnabled) }
+
+            // Extract local metadata
+            val localMeta = extractMetadata(file)
+            
+            // Try to fetch from Modrinth API
+            var iconUrl: String? = null
+            var remoteTitle: String? = null
+            var remoteDesc: String? = null
+            
+            try {
+                val sha1 = calculateSHA1(file)
+                val versionInfo = modrinthRepository.getVersionFromHash(sha1)
+                versionInfo?.let { v ->
+                    val project = modrinthRepository.getProject(v.projectId)
+                    iconUrl = project.iconUrl
+                    remoteTitle = project.title
+                    remoteDesc = project.description
+                }
+            } catch (e: Exception) {
+                // Silently fail API fetch
             }
+
+            val item = InstalledContent(
+                id = localMeta.id ?: fileName,
+                name = remoteTitle ?: localMeta.name ?: (if (isEnabled) fileName else fileName.removeSuffix(".disabled")),
+                author = localMeta.author ?: "Autor Desconhecido",
+                version = localMeta.version ?: "N/A",
+                fileName = fileName,
+                type = type,
+                isEnabled = isEnabled,
+                fullPath = file.absolutePath,
+                description = remoteDesc ?: localMeta.description,
+                iconUrl = iconUrl
+            )
+            
+            metadataCache[file.absolutePath] = item
+            item
+        }
+    }
+
+    private fun calculateSHA1(file: File): String {
+        return try {
+            val digest = java.security.MessageDigest.getInstance("SHA-1")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(8192)
+                var bytesRead = input.read(buffer)
+                while (bytesRead != -1) {
+                    digest.update(buffer, 0, bytesRead)
+                    bytesRead = input.read(buffer)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     private fun loadWorlds(dir: File): List<InstalledContent> {

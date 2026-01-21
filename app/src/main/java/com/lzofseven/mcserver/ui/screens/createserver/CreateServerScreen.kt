@@ -2,6 +2,9 @@ package com.lzofseven.mcserver.ui.screens.createserver
 
 import android.content.Intent
 import android.net.Uri
+import android.content.Context
+import java.io.File
+import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -43,8 +46,17 @@ fun CreateServerScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
+    var selectedUri by remember { mutableStateOf<String?>(null) }
     val folderPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
+        contract = object : ActivityResultContracts.OpenDocumentTree() {
+            override fun createIntent(context: Context, input: Uri?): Intent {
+                val intent = super.createIntent(context, input)
+                if (input != null) {
+                    intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, input)
+                }
+                return intent
+            }
+        }
     ) { uri: Uri? ->
         uri?.let {
             // Persist permission
@@ -52,7 +64,9 @@ fun CreateServerScreen(
                 it,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-            viewModel.updatePath(it.toString())
+            selectedUri = it.toString()
+            // Also update the path shown to user
+            viewModel.updatePath(it.path ?: it.toString())
         }
     }
 
@@ -92,7 +106,7 @@ fun CreateServerScreen(
                         if (uiState.currentStep < 3) {
                             viewModel.nextStep()
                         } else {
-                            viewModel.createServer(context) {
+                            viewModel.createServer(context, selectedUri) {
                                 navController.popBackStack()
                             }
                         }
@@ -130,7 +144,13 @@ fun CreateServerScreen(
                         0 -> StepOne(uiState, viewModel)
                         1 -> StepTwo(uiState, viewModel)
                         2 -> StepThree(uiState, viewModel)
-                        3 -> StepFour(uiState, viewModel, onPickFolder = { folderPickerLauncher.launch(null) })
+                        3 -> StepFour(uiState, viewModel, onPickFolder = { 
+                            try {
+                                folderPickerLauncher.launch(Uri.fromFile(File(uiState.path))) 
+                            } catch (e: Exception) {
+                                folderPickerLauncher.launch(null)
+                            }
+                        })
                     }
                 }
             }

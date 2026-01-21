@@ -25,6 +25,10 @@ import com.lzofseven.mcserver.ui.navigation.Screen
 import com.lzofseven.mcserver.ui.theme.BackgroundDark
 import com.lzofseven.mcserver.ui.theme.PrimaryDark
 import com.lzofseven.mcserver.ui.theme.SurfaceDark
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -299,11 +303,23 @@ fun ContentCard(item: InstalledContent, onToggle: (InstalledContent) -> Unit, on
                 modifier = Modifier.size(48.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Default.Extension,
-                        null,
-                        tint = if(item.isEnabled) PrimaryDark else Color.White.copy(0.3f)
-                    )
+                    if (item.iconUrl != null) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(item.iconUrl)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = item.name,
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Extension,
+                            null,
+                            tint = if(item.isEnabled) PrimaryDark else Color.White.copy(0.3f)
+                        )
+                    }
                 }
             }
             Spacer(Modifier.width(16.dp))

@@ -200,7 +200,7 @@ fun ImmersiveLibraryCard(item: ModrinthResult, progress: Float?, onClick: () -> 
         color = Color.White.copy(alpha = 0.05f),
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)),
-        modifier = Modifier.fillMaxWidth().height(80.dp)
+        modifier = Modifier.fillMaxWidth() // Removing fixed height to allow expansion
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -244,6 +244,29 @@ fun ImmersiveLibraryCard(item: ModrinthResult, progress: Float?, onClick: () -> 
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = 14.sp
                 )
+                
+                // Loader Tags
+                val loaders = item.categories?.filter { it in listOf("fabric", "forge", "neoforge", "quilt", "paper", "spigot", "bukkit") }
+                if (!loaders.isNullOrEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(loaders) { loader ->
+                            Surface(
+                                color = PrimaryDark.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = loader.uppercase(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = PrimaryDark,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
             
             Spacer(modifier = Modifier.width(8.dp))

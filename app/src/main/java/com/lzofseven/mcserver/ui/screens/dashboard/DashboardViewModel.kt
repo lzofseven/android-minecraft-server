@@ -119,11 +119,15 @@ class DashboardViewModel @Inject constructor(
 
     private fun loadServer() {
         viewModelScope.launch {
-            val server = repository.getServerById(serverId)
-            _serverEntity.value = server
-            if (server != null) {
-                initializeManagers(server)
-            }
+            repository.allServers
+                .map { servers -> servers.find { it.id == serverId } }
+                .collect { server ->
+                    _serverEntity.value = server
+                    if (server != null) {
+                        // Re-init managers to reflect potential path/uri updates
+                        initializeManagers(server)
+                    }
+                }
         }
     }
 
@@ -140,12 +144,14 @@ class DashboardViewModel @Inject constructor(
             if (serverManager.isRunning(server.id)) {
                 _serverStatus.value = ServerStatus.RUNNING
                 log("Servidor detectado em execução (persistência)")
+                playitManager.start()
             } else {
                 // Try to detect externally
                 val isActuallyRunning = serverManager.checkProcessHealth(server.id)
                 if (isActuallyRunning) {
                     _serverStatus.value = ServerStatus.RUNNING
                     log("Servidor detectado via processo do sistema")
+                    playitManager.start()
                 }
             }
         }

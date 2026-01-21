@@ -39,9 +39,8 @@ class JavaVersionManager @Inject constructor(
     }
 
     fun getJavaExecutable(version: Int): File {
-        // Map Java 8/16 to 17 for compatibility as per reference script logic
-        val targetVersion = if (version <= 17) 17 else 21
-        return File(runtimesDir, "java-$targetVersion/bin/java")
+        // Use exact version - no more mapping
+        return File(runtimesDir, "java-$version/bin/java")
     }
 
     fun isJavaInstalled(version: Int): Boolean {
@@ -55,11 +54,9 @@ class JavaVersionManager @Inject constructor(
     }
 
     fun installJava(version: Int): Flow<DownloadStatus> = flow {
-        // Compatibility mapping
-        val targetVersion = if (version <= 17) 17 else 21
-        val installDir = File(runtimesDir, "java-$targetVersion")
+        val installDir = File(runtimesDir, "java-$version")
         
-        if (isJavaInstalled(targetVersion)) {
+        if (isJavaInstalled(version)) {
             emit(DownloadStatus.Finished(installDir))
             return@flow
         }
@@ -78,14 +75,18 @@ class JavaVersionManager @Inject constructor(
             extractAssetLib("libandroid-shmem_0.7_aarch64.deb", installDir)
             extractAssetLib("libandroid-spawn_0.3_aarch64.deb", installDir)
 
-            // 2. Extract JDK from Assets
-            // hardcoded name matching what we downloaded to assets/runtimes
-            val jdkAssetName = "openjdk-17_17.0.17-1_aarch64.deb" 
+            // 2. Extract JDK from Assets based on version
+            val jdkAssetName = when (version) {
+                8 -> "openjdk-8_8u432-1_aarch64.deb"
+                17 -> "openjdk-17_17.0.17-1_aarch64.deb"
+                21 -> throw IllegalArgumentException("Java 21 not yet available in assets")
+                else -> throw IllegalArgumentException("Unsupported Java version: $version")
+            }
             
-            val jdkDeb = File(cacheDir, "jdk-$targetVersion.deb")
+            val jdkDeb = File(cacheDir, "jdk-$version.deb")
             emit(DownloadStatus.Progress(10)) 
 
-            // Copy main JDK deb to cache to process it
+            // Copy JDK deb from assets to cache
             copyAssetToCache(jdkAssetName, jdkDeb).collect { status ->
                  if (status is DownloadStatus.Progress) {
                      emit(DownloadStatus.Progress(10 + (status.percentage * 0.4).toInt())) 
@@ -110,6 +111,7 @@ class JavaVersionManager @Inject constructor(
             installDir.deleteRecursively() // Cleanup on failure
         }
     }.flowOn(Dispatchers.IO)
+
 
     private fun extractAssetLib(assetName: String, installDir: File) {
         val debFile = File(cacheDir, assetName)

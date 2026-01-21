@@ -29,6 +29,8 @@ class PlayitManager @Inject constructor(
     private val binDir = File(context.filesDir, "bin")
     private val playitBin = File(binDir, "playit")
     
+    private var pendingRestart = false
+    
     private var process: Process? = null
     private val _status = MutableStateFlow("Stopped")
     val status: StateFlow<String> = _status
@@ -132,7 +134,9 @@ class PlayitManager @Inject constructor(
             _status.value = "Starting..."
             try {
                 _claimLink.value = null
-                _address.value = null
+                if (_address.value == null || _address.value?.contains("Capturando") == true) {
+                    _address.value = null
+                }
                 
                 // Use a stable path for the secret file in our files directory
                 val secretFile = File(context.filesDir, "playit.toml")
@@ -164,82 +168,84 @@ class PlayitManager @Inject constructor(
                     if (status.value == "Running" && _address.value == null && _claimLink.value == null) {
                         Log.w("PlayitManager", "No address found after 12s, attempting silent restart...")
                         // We don't stop everything, just the process to trigger a fresh log
+                        Log.w("PlayitManager", "No address found after 12s, attempting silent restart...")
+                        pendingRestart = true
                         p.destroy()
                     }
                 }
                 
-                val reader = BufferedReader(InputStreamReader(p.inputStream))
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    line?.let { rawLine ->
-                        val logLine = stripAnsi(rawLine)
-                        Log.d("PlayitManager", "LOG: $logLine")
-                        _playitLogs.emit(logLine)
-                        
-                        // Parse claim link - robust check
-                        if (logLine.contains("claim link", ignoreCase = true) || logLine.contains("setup", ignoreCase = true)) {
-                            val link = if (logLine.contains("https://")) {
-                                "https://" + logLine.substringAfter("https://").substringBefore(" ").trim()
-                            } else null
+                try {
+                    val reader = BufferedReader(InputStreamReader(p.inputStream))
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        line?.let { rawLine ->
+                            val logLine = stripAnsi(rawLine)
+                            Log.d("PlayitManager", "LOG: $logLine")
+                            _playitLogs.emit(logLine)
                             
-                            if (link?.startsWith("https://playit.gg") == true) {
-                                _claimLink.value = link
-                                Log.i("PlayitManager", "Found claim/setup link: $link")
+                            // Parse claim link
+                            if (logLine.contains("claim link", ignoreCase = true) || logLine.contains("setup", ignoreCase = true)) {
+                                val link = if (logLine.contains("https://")) {
+                                    "https://" + logLine.substringAfter("https://").substringBefore(" ").trim()
+                                } else null
+                                
+                                if (link?.startsWith("https://playit.gg") == true) {
+                                    _claimLink.value = link
+                                }
                             }
-                        }
-                        
-                        // Parse status and address
-                        if (logLine.contains("0 tunnels registered", ignoreCase = true)) {
-                            _address.value = "Adicione um Túnel no Painel"
-                        }
-                        
-                        // Parse active tunnel address - catch "address:", "connected as", "running at", "tunnel:", etc.
-                        if (logLine.contains("address", ignoreCase = true) || 
-                            logLine.contains("running at", ignoreCase = true) || 
-                            logLine.contains("connected as", ignoreCase = true) ||
-                            logLine.contains("tunnel:", ignoreCase = true) ||
-                            logLine.contains(".playit.gg") || 
-                            logLine.contains(".joinmc.link")) {
                             
-                            val addr = extractAddress(logLine)
-                                          
-                            if (addr != null) {
-                                if (addr != _address.value) {
+                            // Parse registered tunnels
+                            if (logLine.contains("0 tunnels registered", ignoreCase = true)) {
+                                _address.value = "Adicione um Túnel no Painel"
+                            }
+                            
+                            // Parse address
+                            if (logLine.contains(".playit.gg") || logLine.contains(".joinmc.link") || logLine.contains("address", ignoreCase = true)) {
+                                val addr = extractAddress(logLine)
+                                if (addr != null && addr != _address.value) {
                                     _address.value = addr
-                                    Log.i("PlayitManager", "Found public address: $addr")
+                                    Log.i("PlayitManager", "Address updated: $addr")
+                                }
+                            }
+                            
+                            if (logLine.contains("tunnels registered", ignoreCase = true) && !logLine.contains("0 tunnels")) {
+                                if (_address.value == null || _address.value?.contains("Adicione") == true) {
+                                    _address.value = "Túnel Ativo (Capturando...)"
                                 }
                             }
                         }
-                        
-                        // If we see tunnels registered but no specific address yet, and it's not a claim state
-                        if (logLine.contains("tunnels registered", ignoreCase = true) && !logLine.contains("0 tunnels")) {
-                            if (_address.value == null) {
-                                _address.value = "Túnel Ativo (Capturando IP...)"
-                            }
-                        }
                     }
+                } catch (e: java.io.IOException) {
+                   // Handle stream closed gracefully
+                   if (process != null) Log.d("PlayitManager", "Reader closed: ${e.message}")
                 }
             } catch (e: Exception) {
                 Log.e("PlayitManager", "Playit failed to start/run", e)
                 _status.value = "Failed"
             } finally {
                 Log.i("PlayitManager", "Cleaning up process...")
+                val restart = pendingRestart
+                pendingRestart = false
                 stop()
+                if (restart) {
+                    Log.i("PlayitManager", "Restarting Playit...")
+                    start()
+                }
             }
         }
     }
 
     private fun extractAddress(line: String): String? {
         val patterns = listOf(
-            Regex("([a-z0-9.-]+\\.playit\\.gg(:\\d+)?)"),
-            Regex("([a-z0-9.-]+\\.joinmc\\.link(:\\d+)?)"),
-            Regex("([a-z0-9.-]+\\.at\\.playit\\.gg(:\\d+)?)")
+            Regex(".*(?:address|url):?\\s*([a-z0-9.-]+\\.(?:playit\\.gg|ply\\.gg|joinmc\\.link)(?::\\d+)?)", RegexOption.IGNORE_CASE),
+            Regex("([a-z0-9.-]+\\.(?:playit\\.gg|ply\\.gg|joinmc\\.link)(?::\\d+)?)", RegexOption.IGNORE_CASE)
         )
         
         for (pattern in patterns) {
             val match = pattern.find(line)
             if (match != null) {
-                return match.value.trim()
+                // If group 1 exists, use it (address only), else whole match
+                return if (match.groups.size > 1) match.groups[1]?.value else match.value.trim()
             }
         }
         return null
@@ -254,6 +260,7 @@ class PlayitManager @Inject constructor(
         process = null
         _status.value = "Stopped"
         _claimLink.value = null
-        _address.value = null
+        // Don't clear address here if we want to keep it displayed while stopping/restarting
+        // _address.value = null 
     }
 }

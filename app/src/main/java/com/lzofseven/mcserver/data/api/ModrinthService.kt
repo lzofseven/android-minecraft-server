@@ -25,6 +25,12 @@ interface ModrinthService {
     suspend fun getProject(
         @retrofit2.http.Path("id") id: String
     ): com.lzofseven.mcserver.data.model.ModrinthProject
+
+    @retrofit2.http.GET("v2/version_file/{hash}")
+    suspend fun getVersionFromHash(
+        @retrofit2.http.Path("hash") hash: String,
+        @retrofit2.http.Query("algorithm") algorithm: String = "sha1"
+    ): com.lzofseven.mcserver.data.model.ModrinthVersion
     
     companion object {
         const val BASE_URL = "https://api.modrinth.com/"

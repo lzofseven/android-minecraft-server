@@ -912,12 +912,21 @@ fun PlayitStatusCard(status: String, claimLink: String?, address: String?) {
             
             Spacer(Modifier.height(12.dp))
             
-            Text(
-                text = if (address != null) "📡 Servidor Público!" else if (claimLink != null) "📡 Túnel Ativo (Aguardando Resgate)" else if (status == "Running") "📡 Túnel Ativo (Aguardando IP)" else "⏳ $status",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (address != null) Icons.Default.Public else if (status == "Running") Icons.Default.VpnKey else Icons.Default.HourglassEmpty,
+                    contentDescription = null,
+                    tint = if (address != null) Color.Green else Color.Yellow,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (address != null) "Servidor Público!" else if (claimLink != null) "Aguardando Resgate" else if (status == "Running") "Túnel Ativo" else status,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
 
             if (address != null) {
                 Spacer(Modifier.height(8.dp))

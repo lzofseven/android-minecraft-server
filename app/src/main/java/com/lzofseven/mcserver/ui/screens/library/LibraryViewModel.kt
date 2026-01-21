@@ -78,19 +78,20 @@ class LibraryViewModel @Inject constructor(
             _isLoading.value = true
             try {
                 // Determine Loader & Version
-                val loader = when(server.type.lowercase()) {
-                    "fabric" -> "fabric"
-                    "forge" -> "forge"
-                    "neoforge" -> "neoforge"
-                    "paper", "spigot", "bukkit" -> "paper" // Modrinth often uses 'paper' or 'bukkit' for plugins
-                    else -> null // Vanilla or unknown
+                val loaders = when(server.type.lowercase()) {
+                    "fabric" -> listOf("fabric")
+                    "forge" -> listOf("forge")
+                    "neoforge" -> listOf("neoforge")
+                    "paper", "spigot", "bukkit" -> listOf("paper", "bukkit", "spigot") 
+                    "pocketmine", "bedrock" -> listOf("bedrock")
+                    else -> null
                 }
                 
                 // 1. Fetch versions with filters
                 val versions = modrinthRepository.getVersions(
                     projectId = item.projectId,
-                    loader = loader,
-                    gameVersion = server.version
+                    loaders = loaders,
+                    gameVersions = listOf(server.version)
                 )
                 
                 if (versions.isEmpty()) {

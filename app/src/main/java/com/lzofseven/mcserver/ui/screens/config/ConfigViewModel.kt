@@ -129,12 +129,25 @@ class ConfigViewModel @Inject constructor(
     fun saveConfig() {
         viewModelScope.launch {
             currentServer?.let { server ->
+                val typeChanged = _serverType.value.name != server.type
                 val updated = server.copy(
                     ramAllocationMB = _ramAllocation.value,
                     path = _worldPath.value,
+                    uri = if (_worldPath.value.startsWith("content://")) _worldPath.value else server.uri,
                     type = _serverType.value.name
                 )
                 repository.updateServer(updated)
+                
+                // If type changed, delete old jar to force re-download
+                if (typeChanged) {
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        try {
+                            val serverDir = java.io.File(server.path)
+                            java.io.File(serverDir, "server.jar").delete()
+                            java.io.File(serverDir, "PocketMine-MP.phar").delete()
+                        } catch (e: Exception) { e.printStackTrace() }
+                    }
+                }
                 
                 // Save Extra Configs to manager_config.properties
                 val serverDir = java.io.File(server.path)

@@ -37,11 +37,25 @@ class ModrinthRepository @Inject constructor(
         response.hits
     }
 
-    suspend fun getVersions(projectId: String, loader: String? = null, gameVersion: String? = null): List<com.lzofseven.mcserver.data.model.ModrinthVersion> = withContext(Dispatchers.IO) {
-        api.getProjectVersions(projectId, loader, gameVersion)
+    suspend fun getVersions(projectId: String, loaders: List<String>? = null, gameVersions: List<String>? = null): List<com.lzofseven.mcserver.data.model.ModrinthVersion> = withContext(Dispatchers.IO) {
+        val loadersJson = loaders?.let { list -> 
+            "[" + list.joinToString(",") { "\"$it\"" } + "]"
+        }
+        val gameVersionsJson = gameVersions?.let { list ->
+            "[" + list.joinToString(",") { "\"$it\"" } + "]"
+        }
+        api.getProjectVersions(projectId, loadersJson, gameVersionsJson)
     }
 
     suspend fun getProject(projectId: String): com.lzofseven.mcserver.data.model.ModrinthProject = withContext(Dispatchers.IO) {
         api.getProject(projectId)
+    }
+
+    suspend fun getVersionFromHash(hash: String): com.lzofseven.mcserver.data.model.ModrinthVersion? = withContext(Dispatchers.IO) {
+        try {
+            api.getVersionFromHash(hash)
+        } catch (e: Exception) {
+            null
+        }
     }
 }

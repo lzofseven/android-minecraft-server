@@ -17,12 +17,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import okhttp3.OkHttpClient
 import javax.inject.Inject
+import android.content.Context
+import androidx.documentfile.provider.DocumentFile
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 @HiltViewModel
 class ModDetailsViewModel @Inject constructor(
     private val modrinthRepository: ModrinthRepository,
     private val serverRepository: ServerRepository,
     private val client: OkHttpClient,
+    @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -65,18 +69,18 @@ class ModDetailsViewModel @Inject constructor(
                 
                 // 2. Fetch ALL versions (no gameVersion filter for maximum options)
                 val server = serverRepository.getServerById(serverId)
-                val loader = if (server != null) {
+                val loaders = if (server != null) {
                     when (server.type.lowercase()) {
-                        "fabric" -> "fabric"
-                        "forge" -> "forge"
-                        "neoforge" -> "neoforge"
-                        "paper", "spigot", "bukkit" -> "paper"
+                        "fabric" -> listOf("fabric")
+                        "forge" -> listOf("forge")
+                        "neoforge" -> listOf("neoforge")
+                        "paper", "spigot", "bukkit" -> listOf("paper", "bukkit", "spigot")
                         else -> null
                     }
                 } else null
 
                 val versionsDeferred = viewModelScope.async {
-                    modrinthRepository.getVersions(projectId, loader = loader, gameVersion = null)
+                    modrinthRepository.getVersions(projectId, loaders = loaders, gameVersions = null)
                 }
 
                 _project.value = projectDeferred.await()
@@ -162,11 +166,6 @@ class ModDetailsViewModel @Inject constructor(
             // Refined Logic based on Server Type if ambiguous
             val finalFolderName = if (folderName == "mods" && server.type.equals("paper", true)) "plugins" else folderName
 
-            val targetDir = java.io.File(server.path, finalFolderName)
-            if (!targetDir.exists()) targetDir.mkdirs()
-
-            val targetFile = java.io.File(targetDir, file.filename)
-
             try {
                 // Download Logic
                 val request = okhttp3.Request.Builder().url(file.url).build()
@@ -180,17 +179,58 @@ class ModDetailsViewModel @Inject constructor(
                     var bytesDownloaded = 0L
 
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        java.io.FileOutputStream(targetFile).use { output ->
-                            val buffer = ByteArray(8192)
-                            var bytesRead: Int
-                            val inputStream = body.byteStream()
-                            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                                output.write(buffer, 0, bytesRead)
-                                bytesDownloaded += bytesRead
-                                if (totalBytes > 0) {
-                                    val progress = bytesDownloaded.toFloat() / totalBytes.toFloat()
-                                    _downloadProgressMap.value = _downloadProgressMap.value.toMutableMap().apply {
-                                        put(version.id, progress)
+                        // Check if we should use SAF
+                        if (server.uri != null) {
+                            val rootUri = android.net.Uri.parse(server.uri)
+                            val rootDoc = DocumentFile.fromTreeUri(context, rootUri)
+                            if (rootDoc != null && rootDoc.exists()) {
+                                var targetFolderDoc = rootDoc.findFile(finalFolderName)
+                                if (targetFolderDoc == null || !targetFolderDoc.isDirectory) {
+                                    targetFolderDoc = rootDoc.createDirectory(finalFolderName)
+                                }
+                                
+                                if (targetFolderDoc != null) {
+                                    // Delete if exists
+                                    targetFolderDoc.findFile(file.filename)?.delete()
+                                    val newFileDoc = targetFolderDoc.createFile("application/java-archive", file.filename)
+                                    
+                                    newFileDoc?.let { doc ->
+                                        context.contentResolver.openOutputStream(doc.uri)?.use { output ->
+                                            val buffer = ByteArray(8192)
+                                            var bytesRead: Int
+                                            val inputStream = body.byteStream()
+                                            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                                output.write(buffer, 0, bytesRead)
+                                                bytesDownloaded += bytesRead
+                                                if (totalBytes > 0) {
+                                                    val progress = bytesDownloaded.toFloat() / totalBytes.toFloat()
+                                                    _downloadProgressMap.value = _downloadProgressMap.value.toMutableMap().apply {
+                                                        put(version.id, progress)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } ?: throw Exception("Falha ao criar arquivo via SAF")
+                                } else throw Exception("Falha ao acessar pasta $finalFolderName via SAF")
+                            } else throw Exception("URI do servidor inválida ou inacessível")
+                        } else {
+                            // Direct File Fallback
+                            val targetDir = java.io.File(server.path, finalFolderName)
+                            if (!targetDir.exists()) targetDir.mkdirs()
+                            val targetFile = java.io.File(targetDir, file.filename)
+                            
+                            java.io.FileOutputStream(targetFile).use { output ->
+                                val buffer = ByteArray(8192)
+                                var bytesRead: Int
+                                val inputStream = body.byteStream()
+                                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                    output.write(buffer, 0, bytesRead)
+                                    bytesDownloaded += bytesRead
+                                    if (totalBytes > 0) {
+                                        val progress = bytesDownloaded.toFloat() / totalBytes.toFloat()
+                                        _downloadProgressMap.value = _downloadProgressMap.value.toMutableMap().apply {
+                                            put(version.id, progress)
+                                        }
                                     }
                                 }
                             }

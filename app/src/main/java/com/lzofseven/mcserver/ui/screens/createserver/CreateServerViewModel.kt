@@ -135,7 +135,7 @@ class CreateServerViewModel @Inject constructor(
         }
     }
 
-    fun createServer(context: android.content.Context, onSuccess: () -> Unit) {
+    fun createServer(context: android.content.Context, uri: String? = null, onSuccess: () -> Unit) {
         viewModelScope.launch {
             val state = _uiState.value
             val newServer = MCServerEntity(
@@ -143,13 +143,14 @@ class CreateServerViewModel @Inject constructor(
                 version = state.version,
                 type = state.type.name,
                 path = state.path,
+                uri = uri,
                 ramAllocationMB = state.ramAllocation
             )
             repository.insertServer(newServer)
             
             // Save initial server.properties
             try {
-                val propsManager = com.lzofseven.mcserver.util.ServerPropertiesManager(context, state.path)
+                val propsManager = com.lzofseven.mcserver.util.ServerPropertiesManager(context, uri ?: state.path)
                 val initialProps = mapOf(
                     "motd" to state.motd.replace('&', '§'),
                     "difficulty" to state.difficulty.lowercase(),
@@ -182,7 +183,7 @@ class CreateServerViewModel @Inject constructor(
             
             // Download queued mods
             state.queuedContent.forEach { item ->
-                installMod(context, item, state.path, state.type.name, state.version)
+                installMod(context, item, uri ?: state.path, state.type.name, state.version)
             }
             
             onSuccess()
@@ -191,15 +192,15 @@ class CreateServerViewModel @Inject constructor(
 
     private suspend fun installMod(context: android.content.Context, item: com.lzofseven.mcserver.data.model.ModrinthResult, serverPath: String, serverType: String, serverVersion: String) {
         try {
-            val loader = when(serverType.lowercase()) {
-                "fabric" -> "fabric"
-                "forge" -> "forge"
-                "neoforge" -> "neoforge"
-                "paper", "spigot", "bukkit" -> "paper"
+            val loaders = when(serverType.lowercase()) {
+                "fabric" -> listOf("fabric")
+                "forge" -> listOf("forge")
+                "neoforge" -> listOf("neoforge")
+                "paper", "spigot", "bukkit" -> listOf("paper", "bukkit", "spigot")
                 else -> null
             }
             
-            val versions = modrinthRepository.getVersions(item.projectId, loader, serverVersion)
+            val versions = modrinthRepository.getVersions(item.projectId, loaders, listOf(serverVersion))
             if (versions.isNotEmpty()) {
                 val latest = versions.first()
                 if (latest.files.isNotEmpty()) {
@@ -212,18 +213,42 @@ class CreateServerViewModel @Inject constructor(
                         else -> ""
                     }
                     
-                    val targetDir = if (folderName.isNotEmpty()) java.io.File(serverPath, folderName) else java.io.File(serverPath)
-                    if (!targetDir.exists()) targetDir.mkdirs()
-                    
-                    val targetFile = java.io.File(targetDir, file.filename)
-                    
-                    val request = okhttp3.Request.Builder().url(file.url).build()
-                    val response = client.newCall(request).execute()
-                    
-                    if (response.isSuccessful) {
-                        response.body?.byteStream()?.use { input ->
-                            java.io.FileOutputStream(targetFile).use { output ->
-                                input.copyTo(output)
+                    if (serverPath.startsWith("content://")) {
+                        // SAF Download
+                        val treeUri = android.net.Uri.parse(serverPath)
+                        val docFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
+                        
+                        val targetDir = if (folderName.isNotEmpty()) {
+                            docFile?.findFile(folderName) ?: docFile?.createDirectory(folderName)
+                        } else docFile
+                        
+                        targetDir?.let { dir ->
+                            val targetFileDoc = dir.findFile(file.filename) ?: dir.createFile("application/java-archive", file.filename)
+                            targetFileDoc?.let { target ->
+                                val request = okhttp3.Request.Builder().url(file.url).build()
+                                val response = client.newCall(request).execute()
+                                if (response.isSuccessful) {
+                                    context.contentResolver.openOutputStream(target.uri)?.use { output ->
+                                        response.body?.byteStream()?.copyTo(output)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Direct File Access
+                        val targetDir = if (folderName.isNotEmpty()) java.io.File(serverPath, folderName) else java.io.File(serverPath)
+                        if (!targetDir.exists()) targetDir.mkdirs()
+                        
+                        val targetFile = java.io.File(targetDir, file.filename)
+                        
+                        val request = okhttp3.Request.Builder().url(file.url).build()
+                        val response = client.newCall(request).execute()
+                        
+                        if (response.isSuccessful) {
+                            response.body?.byteStream()?.use { input ->
+                                java.io.FileOutputStream(targetFile).use { output ->
+                                    input.copyTo(output)
+                                }
                             }
                         }
                     }
