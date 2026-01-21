@@ -163,17 +163,28 @@ class RealServerManager @Inject constructor(
                 } catch (e: Exception) { e.printStackTrace() }
             }
 
-            commandPrefix = listOf(
+            // Build command with Java-version-specific flags
+            val baseCommand = mutableListOf(
                 executable.absolutePath,
                 "-Xms${server.ramAllocationMB}M",
-                "-Xmx${server.ramAllocationMB}M",
-                "-XX:ActiveProcessorCount=$cpuCores",
+                "-Xmx${server.ramAllocationMB}M"
+            )
+            
+            // ActiveProcessorCount only supported in Java 9+
+            // Skip for Java 8 to avoid "error loading java agent"
+            if (javaVersion >= 9) {
+                baseCommand.add("-XX:ActiveProcessorCount=$cpuCores")
+            }
+            
+            baseCommand.addAll(listOf(
                 "-Djna.tmpdir=${context.cacheDir.absolutePath}",
                 "-Djava.io.tmpdir=${context.cacheDir.absolutePath}",
                 "-jar",
                 serverJar.absolutePath,
                 "nogui"
-            )
+            ))
+            
+            commandPrefix = baseCommand
         }
 
         try {
