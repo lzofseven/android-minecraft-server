@@ -317,23 +317,17 @@ class DashboardViewModel @Inject constructor(
 
     private suspend fun startServer(server: MCServerEntity) {
         _serverStatus.value = ServerStatus.STARTING
-        
-        notificationHelper.showNotification(
-             NotificationHelper.CHANNEL_STATUS,
-             100,
-             "Iniciando ${server.name}",
-             "O servidor esta subindo. Verifique o console."
-        )
 
         serverManager.startServer(server)
         
         _serverStatus.value = ServerStatus.RUNNING
         
+        // Single notification when server is actually online
         notificationHelper.showNotification(
             NotificationHelper.CHANNEL_STATUS,
             100,
             "Servidor Online",
-            "Processo Java iniciado com ${server.ramAllocationMB}MB RAM."
+            "${server.name} iniciado com ${server.ramAllocationMB}MB RAM."
         )
     }
     

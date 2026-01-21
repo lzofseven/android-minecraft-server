@@ -215,12 +215,14 @@ class RealServerManager @Inject constructor(
                             if (joinMatch != null) {
                                 val playerName = joinMatch.groupValues[1]
                                 addPlayer(server.id, playerName)
-                                notificationHelper.showNotification(
-                                    NotificationHelper.CHANNEL_PLAYERS,
-                                    200 + playerName.hashCode(), 
-                                    "Jogador Conectado",
-                                    "$playerName entrou no servidor."
-                                )
+                                // Player join notification disabled to reduce notification spam
+                                // TODO: Re-enable when settings screen is implemented
+                                // notificationHelper.showNotification(
+                                //     NotificationHelper.CHANNEL_PLAYERS,
+                                //     200 + playerName.hashCode(), 
+                                //     "Jogador Conectado",
+                                //     "$playerName entrou no servidor."
+                                // )
                             }
                             
                             // Parse 'left the game'
