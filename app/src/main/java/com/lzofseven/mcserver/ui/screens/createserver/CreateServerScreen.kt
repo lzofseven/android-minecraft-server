@@ -487,38 +487,33 @@ fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
 @Composable
 fun StepFour(state: CreateServerState, viewModel: CreateServerViewModel, onPickFolder: () -> Unit) {
     Text("Instalação", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
-    Text("Escolha onde os arquivos do servidor serão vistos e salvos.", color = Color.White.copy(alpha = 0.7f))
+    Text("Confirme o local onde os arquivos do servidor serão salvos.", color = Color.White.copy(alpha = 0.7f))
     
     Spacer(Modifier.height(16.dp))
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onPickFolder() }
-            .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp)),
-        colors = CardDefaults.cardColors(containerColor = SurfaceDark)
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.FolderOpen, null, tint = PrimaryDark)
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Text(
-                    text = if (state.path.isEmpty()) "Selecionar Pasta" else "Pasta Selecionada",
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                if (state.path.isNotEmpty()) {
-                    Text(
-                        text = state.path,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.5f),
-                        maxLines = 1,
-                    )
-                }
+    OutlinedTextField(
+        value = state.path,
+        onValueChange = { viewModel.updatePath(it) },
+        label = { Text("Caminho do Servidor") },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        leadingIcon = { Icon(Icons.Default.FolderOpen, null, tint = PrimaryDark) },
+        trailingIcon = {
+            IconButton(onClick = onPickFolder) {
+                Icon(Icons.Default.Edit, "Alterar pasta", tint = Color.White.copy(0.5f))
             }
-        }
-    }
+        },
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = PrimaryDark,
+            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+            unfocusedContainerColor = SurfaceDark,
+            focusedContainerColor = SurfaceDark,
+            focusedTextColor = Color.White,
+            unfocusedTextColor = Color.White
+        ),
+        singleLine = true
+    )
+    
+    Spacer(Modifier.height(8.dp))
+    Text("Você pode editar o caminho ou clicar no ícone para selecionar outra pasta.", color = Color.White.copy(0.4f), style = MaterialTheme.typography.labelSmall)
 }

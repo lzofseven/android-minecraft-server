@@ -28,7 +28,12 @@ class CreateServerViewModel @Inject constructor(
     }
 
     fun updateName(name: String) {
-        _uiState.value = _uiState.value.copy(name = name)
+        val sanitizedName = name.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(30)
+        val defaultPath = "/storage/emulated/0/MCServers/$sanitizedName"
+        _uiState.value = _uiState.value.copy(
+            name = name,
+            path = if (_uiState.value.path.isEmpty() || _uiState.value.path.startsWith("/storage/emulated/0/MCServers/")) defaultPath else _uiState.value.path
+        )
     }
 
     fun updateVersion(version: String) {
