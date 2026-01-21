@@ -39,8 +39,13 @@ class JavaVersionManager @Inject constructor(
     }
 
     fun getJavaExecutable(version: Int): File {
-        // Use exact version - no more mapping
-        return File(runtimesDir, "java-$version/bin/java")
+        // Map Java 8/16 to 17 until we have Java 8 in assets
+        val targetVersion = when {
+            version <= 16 -> 17
+            version >= 21 -> 21
+            else -> version
+        }
+        return File(runtimesDir, "java-$targetVersion/bin/java")
     }
 
     fun isJavaInstalled(version: Int): Boolean {
@@ -54,9 +59,15 @@ class JavaVersionManager @Inject constructor(
     }
 
     fun installJava(version: Int): Flow<DownloadStatus> = flow {
-        val installDir = File(runtimesDir, "java-$version")
+        // Map to available runtimes until we have all versions in assets
+        val targetVersion = when {
+            version <= 16 -> 17
+            version >= 21 -> 21
+            else -> version
+        }
+        val installDir = File(runtimesDir, "java-$targetVersion")
         
-        if (isJavaInstalled(version)) {
+        if (isJavaInstalled(targetVersion)) {
             emit(DownloadStatus.Finished(installDir))
             return@flow
         }
@@ -75,15 +86,10 @@ class JavaVersionManager @Inject constructor(
             extractAssetLib("libandroid-shmem_0.7_aarch64.deb", installDir)
             extractAssetLib("libandroid-spawn_0.3_aarch64.deb", installDir)
 
-            // 2. Extract JDK from Assets based on version
-            val jdkAssetName = when (version) {
-                8 -> "openjdk-8_8u432-1_aarch64.deb"
-                17 -> "openjdk-17_17.0.17-1_aarch64.deb"
-                21 -> throw IllegalArgumentException("Java 21 not yet available in assets")
-                else -> throw IllegalArgumentException("Unsupported Java version: $version")
-            }
+            // 2. Extract JDK from Assets (only Java 17 available)
+            val jdkAssetName = "openjdk-17_17.0.17-1_aarch64.deb"
             
-            val jdkDeb = File(cacheDir, "jdk-$version.deb")
+            val jdkDeb = File(cacheDir, "jdk-$targetVersion.deb")
             emit(DownloadStatus.Progress(10)) 
 
             // Copy JDK deb from assets to cache
