@@ -308,7 +308,7 @@ fun ContentCard(item: InstalledContent, onToggle: (InstalledContent) -> Unit, on
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(item.name, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("v${item.version} • ${item.author}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.4f))
+                Text("Versão ${item.version} • Por ${item.author}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.4f))
             }
             
             if (item.type != "world") {
