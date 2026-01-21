@@ -100,6 +100,12 @@ class DashboardViewModel @Inject constructor(
     // Real Stats Flow
     val serverStats = serverManager.getServerStatsFlow(serverId)
     
+    val statsHistory: StateFlow<List<com.lzofseven.mcserver.core.execution.RealServerManager.ServerStats>> = serverStats
+        .scan(emptyList<com.lzofseven.mcserver.core.execution.RealServerManager.ServerStats>()) { acc, value ->
+            (acc + value).takeLast(30)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    
     val playitStatus = playitManager.status
     val playitClaimLink = playitManager.claimLink
     val playitAddress = playitManager.address

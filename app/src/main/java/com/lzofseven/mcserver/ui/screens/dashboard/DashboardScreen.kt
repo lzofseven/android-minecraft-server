@@ -45,6 +45,7 @@ fun DashboardScreen(
     val showEulaDialog by viewModel.showEulaDialog.collectAsState()
     val onlinePlayers by viewModel.onlinePlayers.collectAsState()
     val serverStats by viewModel.serverStats.collectAsState(initial = com.lzofseven.mcserver.core.execution.RealServerManager.ServerStats(0.0, 0.0))
+    val statsHistory by viewModel.statsHistory.collectAsState()
     val consoleLogs by viewModel.consoleLogs.collectAsState(initial = emptyList<String>())
     val showPermissionDialog by viewModel.showPermissionDialog.collectAsState()
     
@@ -139,6 +140,7 @@ fun DashboardScreen(
                     item {
                         PerformanceStatsSection(
                             serverStats = serverStats,
+                            statsHistory = statsHistory,
                             ramLimitGb = (serverEntity?.ramAllocationMB ?: 2048) / 1024.0,
                             onRamClick = { navController.navigate(Screen.Config.createRoute(serverEntity!!.id)) }
                         )
@@ -332,37 +334,131 @@ fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName:
 @Composable
 fun PerformanceStatsSection(
     serverStats: com.lzofseven.mcserver.core.execution.RealServerManager.ServerStats, 
+    statsHistory: List<com.lzofseven.mcserver.core.execution.RealServerManager.ServerStats>,
     ramLimitGb: Double,
     onRamClick: () -> Unit
 ) {
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("DESEMPENHO", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f), fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-            Text("Atualiza a cada 5s", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.2f))
+            Text("DESEMPENHO EM TEMPO REAL", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f), fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Text("Histórico (30s)", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.2f))
         }
         Spacer(Modifier.height(16.dp))
         
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatCard(
+            StatCardWithGraph(
                 title = "Processador",
                 value = String.format("%.1f", serverStats.cpu),
                 unit = "%",
                 icon = Icons.Default.Memory,
                 color = Color(0xFF42A5F5), // Blue
-                usage = serverStats.cpu / 100.0,
+                history = statsHistory.map { it.cpu.toFloat() / 100f },
                 modifier = Modifier.weight(1f)
             )
-            StatCard(
-                title = "Memoria RAM",
+            StatCardWithGraph(
+                title = "Memória RAM",
                 value = String.format("%.1f", serverStats.ram),
                 unit = "/${String.format("%.1f", ramLimitGb)}GB",
                 icon = Icons.Default.Storage,
                 color = Color(0xFFAB47BC), // Purple
-                usage = (serverStats.ram / ramLimitGb).coerceIn(0.0, 1.0),
+                history = statsHistory.map { (it.ram / ramLimitGb).toFloat().coerceIn(0f, 1f) },
                 modifier = Modifier.weight(1f),
                 onClick = onRamClick
             )
         }
+    }
+}
+
+@Composable
+fun StatCardWithGraph(
+    title: String,
+    value: String,
+    unit: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: Color,
+    history: List<Float>,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    Surface(
+        color = SurfaceDark.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(20.dp),
+        modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, tint = color.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(title, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.4f))
+            }
+            
+            Spacer(Modifier.height(12.dp))
+            
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color.White)
+                Spacer(Modifier.width(4.dp))
+                Text(unit, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.3f), modifier = Modifier.padding(bottom = 4.dp))
+            }
+
+            Spacer(Modifier.height(16.dp))
+            
+            HardwareGraph(history = history, color = color, modifier = Modifier.fillMaxWidth().height(40.dp))
+        }
+    }
+}
+
+@Composable
+fun HardwareGraph(history: List<Float>, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        if (history.size < 2) return@Canvas
+        
+        val width = size.width
+        val height = size.height
+        val spacing = width / 29f // Max 30 points
+        
+        val path = androidx.compose.ui.graphics.Path()
+        val fillPath = androidx.compose.ui.graphics.Path()
+        
+        history.forEachIndexed { index, value ->
+            val x = index * spacing
+            val y = height - (value * height)
+            
+            if (index == 0) {
+                path.moveTo(x, y)
+                fillPath.moveTo(x, height)
+                fillPath.lineTo(x, y)
+            } else {
+                path.lineTo(x, y)
+                fillPath.lineTo(x, y)
+            }
+            
+            if (index == history.lastIndex) {
+                fillPath.lineTo(x, height)
+                fillPath.close()
+            }
+        }
+        
+        drawPath(
+            path = fillPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(color.copy(alpha = 0.3f), Color.Transparent),
+                startY = 0f,
+                endY = height
+            )
+        )
+        
+        drawPath(
+            path = path,
+            color = color,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        )
+        
+        // Draw glow effect for line
+        drawPath(
+            path = path,
+            color = color.copy(alpha = 0.2f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 6.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        )
     }
 }
 
