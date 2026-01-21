@@ -21,6 +21,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -250,7 +251,7 @@ fun ServerItemCardV2(server: MCServerEntity, motd: String, icon: android.graphic
                     Box(contentAlignment = Alignment.Center) {
                         if (icon != null) {
                             androidx.compose.foundation.Image(
-                                bitmap = androidx.compose.ui.graphics.asImageBitmap(icon),
+                                bitmap = icon.asImageBitmap(),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()

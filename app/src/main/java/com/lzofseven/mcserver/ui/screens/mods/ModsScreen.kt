@@ -13,10 +13,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.lzofseven.mcserver.ui.navigation.Screen
@@ -25,13 +29,13 @@ import com.lzofseven.mcserver.ui.theme.PrimaryDark
 import com.lzofseven.mcserver.ui.theme.SurfaceDark
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModsScreen(
     navController: NavController,
@@ -40,31 +44,28 @@ fun ModsScreen(
     val content by viewModel.installedContent.collectAsState()
     val selectedTab by viewModel.selectedTab.collectAsState()
     val selectedSubFilter by viewModel.selectedSubFilter.collectAsState()
-    val showDisabled by viewModel.showDisabled.collectAsState()
-    val showUpdates by viewModel.showUpdates.collectAsState()
     
     val tabs = listOf("Content", "Worlds", "Logs")
     
-    var searchQuery by androidx.compose.runtime.mutableStateOf("")
+    var searchQuery by remember { mutableStateOf("") }
     val filteredContent = content.filter { it.name.contains(searchQuery, ignoreCase = true) || it.fileName.contains(searchQuery, ignoreCase = true) }
 
     Scaffold(
         containerColor = BackgroundDark,
         topBar = {
             Column(modifier = Modifier.background(BackgroundDark).padding(top = 16.dp)) {
-                // Pill Tabs
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Tab Row
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.Transparent,
+                    contentColor = PrimaryDark,
+                    divider = {}
                 ) {
                     tabs.forEachIndexed { index, title ->
-                        Surface(
+                        Tab(
+                            selected = selectedTab == index,
                             onClick = { viewModel.selectTab(index) },
-                            color = if (selectedTab == index) Color(0xFF1E2924) else Color.Transparent,
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier.height(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 16.dp)) {
+                            text = {
                                 Text(
                                     text = title,
                                     color = if (selectedTab == index) PrimaryDark else Color.White.copy(alpha = 0.6f),
@@ -72,7 +73,7 @@ fun ModsScreen(
                                     fontSize = 14.sp
                                 )
                             }
-                        }
+                        )
                     }
                 }
 
@@ -90,7 +91,6 @@ fun ModsScreen(
                         modifier = Modifier.weight(1f).height(48.dp),
                         placeholder = { Text("Search ${content.size} projects...", color = Color.White.copy(0.3f), fontSize = 14.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(18.dp)) },
-                        trailingIcon = { if(searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(androidx.compose.material.icons.filled.Close, null, tint = Color.White.copy(0.4f)) } },
                         shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Color.White.copy(0.1f),
@@ -115,8 +115,6 @@ fun ModsScreen(
                             Icon(Icons.Default.Add, null, tint = Color.White, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Install content", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Spacer(Modifier.width(8.dp))
-                            Icon(androidx.compose.material.icons.filled.KeyboardArrowDown, null, tint = Color.White.copy(0.4f), modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -126,9 +124,9 @@ fun ModsScreen(
                 // Sub-filter Chips
                 if (selectedTab == 0) {
                     val subFilters = listOf(
-                        null to "Mods",
-                        "shader" to "Shaders",
-                        "resourcepack" to "Resource Packs"
+                        null to "All",
+                        "mod" to "Mods",
+                        "plugin" to "Plugins"
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -146,43 +144,31 @@ fun ModsScreen(
                                     selectedContainerColor = Color.White.copy(0.15f),
                                     selectedLabelColor = Color.White
                                 ),
-                                border = null,
-                                leadingIcon = if (label == "Mods") { { Icon(androidx.compose.material.icons.filled.FilterList, null, modifier = Modifier.size(14.dp)) } } else null
+                                border = null
                             )
                         }
                     }
                 }
                 
-                Spacer(Modifier.height(16.dp))
-                
-                // Table Header
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(androidx.compose.material.icons.filled.CheckBoxOutlineBlank, null, tint = Color.White.copy(0.2f), modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(16.dp))
-                    Text("Name", color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.width(180.dp))
-                    Text("Updated", color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(androidx.compose.material.icons.filled.Refresh, null, tint = Color.White.copy(0.4f), modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Refresh", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
-                        Spacer(Modifier.width(16.dp))
-                        Icon(androidx.compose.material.icons.filled.Download, null, tint = PrimaryDark, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Update all", color = PrimaryDark, fontSize = 12.sp)
-                    }
-                }
-                
-                Divider(color = Color.White.copy(alpha = 0.05f), thickness = 1.dp, modifier = Modifier.padding(top = 8.dp))
+                Spacer(Modifier.height(12.dp))
+                Divider(color = Color.White.copy(alpha = 0.05f), thickness = 1.dp)
+            }
+        },
+        floatingActionButton = {
+            if (selectedTab == 0) {
+                ExtendedFloatingActionButton(
+                    onClick = { navController.navigate(Screen.Library.createRoute(viewModel.serverId)) },
+                    containerColor = PrimaryDark,
+                    contentColor = BackgroundDark,
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("INSTALL", fontWeight = FontWeight.Black) }
+                )
             }
         }
     ) { padding ->
         if (selectedTab == 2) {
              Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                 Text("Logs do Servidor (Em breve)", color = Color.White.copy(0.3f))
+                 Text("Server Logs (Coming Soon)", color = Color.White.copy(0.3f))
              }
              return@Scaffold
         }
@@ -206,7 +192,7 @@ fun ModsScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = if (searchQuery.isNotBlank()) "Nenhum resultado para '$searchQuery'" else "Vazio por aqui",
+                        text = if (searchQuery.isNotBlank()) "No results for '$searchQuery'" else "Nothing here yet",
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White.copy(alpha = 0.4f)
                     )
@@ -236,20 +222,16 @@ fun ModsScreen(
 @Composable
 fun ContentItem(item: InstalledContent, onToggle: () -> Unit, onDelete: () -> Unit) {
     Surface(
-        color = Color.Transparent,
+        color = SurfaceDark.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 12.dp, horizontal = 24.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Checkbox
-            Icon(androidx.compose.material.icons.filled.CheckBoxOutlineBlank, null, tint = Color.White.copy(0.1f), modifier = Modifier.size(18.dp))
-            
-            Spacer(Modifier.width(16.dp))
-
             // Icon
             Box(
                 modifier = Modifier
@@ -282,7 +264,7 @@ fun ContentItem(item: InstalledContent, onToggle: () -> Unit, onDelete: () -> Un
             Spacer(Modifier.width(16.dp))
 
             // Name & Author
-            Column(modifier = Modifier.width(180.dp)) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.name,
                     style = MaterialTheme.typography.bodyMedium,
@@ -292,45 +274,21 @@ fun ContentItem(item: InstalledContent, onToggle: () -> Unit, onDelete: () -> Un
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "by ${item.author}",
+                    text = "by ${item.author} • v${item.version}",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White.copy(alpha = 0.4f),
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
-
-            // Version & Filename
-            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = item.version,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = item.fileName,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.3f),
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    fontSize = 10.sp
-                )
-            }
             
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(8.dp))
 
-            // Actions Row
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Download icon for updates (if applicable)
-                if (false) { // Placeholder for hasUpdate
-                    Icon(androidx.compose.material.icons.filled.FileDownload, null, tint = PrimaryDark, modifier = Modifier.size(20.dp))
-                }
-                
+            // Toggle & Delete
+            if (item.type != "world") {
                 Switch(
                     checked = item.isEnabled,
                     onCheckedChange = { onToggle() },
-                    modifier = Modifier.scale(0.8f),
                     colors = SwitchDefaults.colors(
                         checkedTrackColor = PrimaryDark,
                         checkedThumbColor = BackgroundDark,
@@ -339,19 +297,16 @@ fun ContentItem(item: InstalledContent, onToggle: () -> Unit, onDelete: () -> Un
                         uncheckedBorderColor = Color.Transparent
                     )
                 )
+            }
 
-                IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                    Icon(
-                        androidx.compose.material.icons.filled.DeleteOutline,
-                        contentDescription = "Remover",
-                        tint = Color.White.copy(alpha = 0.4f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                
-                Icon(androidx.compose.material.icons.filled.MoreVert, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(18.dp))
+            IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Remove",
+                    tint = Color.White.copy(alpha = 0.4f),
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
 }
-

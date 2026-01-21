@@ -10,25 +10,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBackIosNew
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Add
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.lzofseven.mcserver.ui.screens.config.ServerType
@@ -36,7 +34,7 @@ import com.lzofseven.mcserver.ui.theme.BackgroundDark
 import com.lzofseven.mcserver.ui.theme.PrimaryDark
 import com.lzofseven.mcserver.ui.theme.SurfaceDark
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun CreateServerScreen(
     navController: NavController,
@@ -140,6 +138,7 @@ fun CreateServerScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StepOne(state: CreateServerState, viewModel: CreateServerViewModel) {
     Text("Nome e Tipo", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
@@ -183,11 +182,6 @@ fun StepOne(state: CreateServerState, viewModel: CreateServerViewModel) {
     }
 }
 
-    }
-
-    Spacer(Modifier.height(8.dp))
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StepTwo(state: CreateServerState, viewModel: CreateServerViewModel) {
@@ -227,7 +221,7 @@ fun StepTwo(state: CreateServerState, viewModel: CreateServerViewModel) {
                             modifier = androidx.compose.ui.Modifier.fillMaxSize()
                         )
                     } else {
-                        Icon(androidx.compose.material.icons.filled.AddPhotoAlternate, null, tint = Color.White.copy(alpha = 0.3f))
+                        Icon(Icons.Default.Add, null, tint = Color.White.copy(alpha = 0.3f))
                     }
                 }
                 
@@ -395,6 +389,7 @@ fun StepTwo(state: CreateServerState, viewModel: CreateServerViewModel) {
             )
         }
     }
+}
 
 @Composable
 fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
@@ -413,7 +408,7 @@ fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
             placeholder = { Text("Buscar mods...") },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
-            leadingIcon = { Icon(androidx.compose.material.icons.filled.Search, null, tint = PrimaryDark) },
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = PrimaryDark) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = PrimaryDark,
                 unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
@@ -434,7 +429,7 @@ fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
-                androidx.compose.foundation.lazy.items(state.libraryResults) { item ->
+                items(state.libraryResults) { item ->
                     val isQueued = state.queuedContent.any { it.projectId == item.projectId }
                     Surface(
                         onClick = { viewModel.toggleModQueue(item) },
@@ -447,7 +442,7 @@ fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
                             AsyncImage(
                                 model = item.iconUrl ?: "https://lh3.googleusercontent.com/aida-public/AB6AXuCwfrVy1tVAb2P64nfILPuylYzDWefOwHF251qSRzEp0xrLw1zRuRyS1TwbUVGstZ7Hd1h2lbIWTmme9atM1kDq7MA2HuNRk_yVkIXPkN8VK6On77IKdxXB2_HoP2CAXvSMbAAMV_Q_ixgnlis_A-slL40GFyzmbuW1fEzujtubzwlNfDK6OeB8ZUzFj6yTwMyXVU2ii1r9OgmjVTSm1WxffLOFkgNmowvuLCfRgynW10vEv7kq7F42ttsHnsnXYjJtlLUCJYlNBi_p",
                                 contentDescription = null,
-                                modifier = Modifier.size(40.dp).androidx.compose.ui.draw.clip(RoundedCornerShape(8.dp))
+                                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))
                             )
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
@@ -457,7 +452,7 @@ fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
                             if (isQueued) {
                                 Icon(Icons.Default.Check, null, tint = PrimaryDark)
                             } else {
-                                Icon(androidx.compose.material.icons.filled.Add, null, tint = Color.White.copy(0.3f))
+                                Icon(Icons.Default.Add, null, tint = Color.White.copy(0.3f))
                             }
                         }
                     }
