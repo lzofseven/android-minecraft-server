@@ -48,9 +48,18 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                _searchResults.value = modrinthRepository.search(query, _selectedType.value)
+                val server = serverRepository.getServerById(serverId)
+                val isBedrock = server?.type?.equals("BEDROCK", ignoreCase = true) == true || 
+                               server?.type?.equals("POCKETMINE", ignoreCase = true) == true
+                
+                val categories = if (isBedrock) listOf("bedrock") else null
+                
+                _searchResults.value = modrinthRepository.search(
+                    query = query, 
+                    type = _selectedType.value,
+                    categories = categories
+                )
             } catch (e: Exception) {
-                // Log error or show snackbar
                 _toastMessage.emit("Erro ao buscar: ${e.message}")
             } finally {
                 _isLoading.value = false

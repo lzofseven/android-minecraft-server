@@ -26,7 +26,9 @@ sealed class Screen(val route: String) {
     object Config : Screen("config/{serverId}") {
         fun createRoute(serverId: String) = "config/$serverId"
     }
-    object Mods : Screen("mods/{serverId}")
+    object Mods : Screen("mods/{serverId}") {
+        fun createRoute(serverId: String) = "mods/$serverId"
+    }
     object Library : Screen("library/{serverId}") {
         fun createRoute(serverId: String) = "library/$serverId"
     }
@@ -77,7 +79,10 @@ fun NavGraph(
             ConfigScreen(navController = navController)
         }
         
-        composable(Screen.Mods.route) {
+        composable(
+            route = Screen.Mods.route,
+            arguments = listOf(navArgument("serverId") { type = NavType.StringType })
+        ) {
             ModsScreen(navController = navController)
         }
         

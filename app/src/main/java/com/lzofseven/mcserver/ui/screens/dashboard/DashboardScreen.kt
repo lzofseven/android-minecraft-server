@@ -508,15 +508,22 @@ fun QuickToolsSection(navController: NavController, serverId: String) {
         
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ToolButton(
-                title = "Gerenciar Servidores",
+                title = "Gerenciar Servidor",
                 desc = "Propriedades e Configurações",
                 icon = Icons.Default.Settings,
                 color = TertiaryDark,
                 onClick = { navController.navigate(Screen.ServerManagement.createRoute(serverId)) }
             )
             ToolButton(
+                title = "Gerenciar Conteúdo",
+                desc = "Mods, Plugins e Mundos Instalados",
+                icon = Icons.Default.Folder,
+                color = Color(0xFF64B5F6), // Light Blue
+                onClick = { navController.navigate(Screen.Mods.createRoute(serverId)) }
+            )
+            ToolButton(
                 title = "Loja de Conteúdo",
-                desc = "Mods, Plugins e Shaders",
+                desc = "Baixar novos Mods e Plugins",
                 icon = Icons.Default.Extension,
                 color = PrimaryDark,
                 onClick = { navController.navigate(Screen.Library.createRoute(serverId)) }

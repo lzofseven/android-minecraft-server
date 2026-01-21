@@ -11,11 +11,20 @@ import javax.inject.Singleton
 class ModrinthRepository @Inject constructor(
     private val api: ModrinthService
 ) {
-    suspend fun search(query: String, type: String? = null, version: String? = null): List<ModrinthResult> = withContext(Dispatchers.IO) {
+    suspend fun search(
+        query: String, 
+        type: String? = null, 
+        version: String? = null,
+        categories: List<String>? = null
+    ): List<ModrinthResult> = withContext(Dispatchers.IO) {
         val facetsList = mutableListOf<List<String>>()
         
         type?.let { facetsList.add(listOf("project_type:$it")) }
         version?.let { facetsList.add(listOf("versions:$it")) }
+        
+        categories?.let { cats ->
+            facetsList.add(cats.map { "categories:$it" })
+        }
         
         val facetsJson = if (facetsList.isNotEmpty()) {
             val inner = facetsList.joinToString(",") { facet -> 
