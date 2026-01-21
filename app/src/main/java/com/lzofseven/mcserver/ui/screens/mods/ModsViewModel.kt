@@ -10,6 +10,9 @@ import javax.inject.Inject
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.lzofseven.mcserver.data.repository.ServerRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -27,15 +30,23 @@ class ModsViewModel @Inject constructor(
     private val _selectedTab = MutableStateFlow(0)
     val selectedTab = _selectedTab.asStateFlow()
     
-    // Sub-filters
-    private val _selectedSubFilter = MutableStateFlow<String?>(null) // "mod", "shader", etc.
+    // File Manager State
+    private val _currentBrowserPath = MutableStateFlow<File?>(null)
+    val currentBrowserPath = _currentBrowserPath.asStateFlow()
+    
+    private val _browserFiles = MutableStateFlow<List<File>>(emptyList())
+    val browserFiles = _browserFiles.asStateFlow()
+
+    private val _selectedSubFilter = MutableStateFlow<String?>(null)
     val selectedSubFilter = _selectedSubFilter.asStateFlow()
     
     private val _showDisabled = MutableStateFlow(false)
     val showDisabled = _showDisabled.asStateFlow()
     
-    private val _showUpdates = MutableStateFlow(false)
-    val showUpdates = _showUpdates.asStateFlow()
+    private val _toastMessage = MutableSharedFlow<String>()
+    val toastMessage = _toastMessage.asSharedFlow()
+
+    private var clipboardFile: File? = null
 
     init {
         loadContent()
@@ -45,22 +56,6 @@ class ModsViewModel @Inject constructor(
         _selectedTab.value = index
         _selectedSubFilter.value = null
         _showDisabled.value = false
-        _showUpdates.value = false
-        loadContent()
-    }
-
-    fun setSubFilter(filter: String?) {
-        _selectedSubFilter.value = filter
-        loadContent()
-    }
-
-    fun setShowDisabled(show: Boolean) {
-        _showDisabled.value = show
-        loadContent()
-    }
-
-    fun setShowUpdates(show: Boolean) {
-        _showUpdates.value = show
         loadContent()
     }
 
@@ -71,15 +66,23 @@ class ModsViewModel @Inject constructor(
     fun loadContent() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val server = repository.getServerById(serverId) ?: return@launch
+            val serverRoot = File(server.path)
+            
+            if (_selectedTab.value == 3) {
+                // File Manager Logic
+                val currentDir = _currentBrowserPath.value ?: serverRoot
+                _currentBrowserPath.value = currentDir
+                val files = (currentDir.listFiles() ?: emptyArray()).sortedWith(
+                    compareBy({ !it.isDirectory }, { it.name.lowercase() })
+                )
+                _browserFiles.value = files
+                return@launch
+            }
+
             var items = when (_selectedTab.value) {
-                0 -> {
-                    val mods = loadFromDir(File(server.path, "mods"), "mod")
-                    val shaders = loadFromDir(File(server.path, "shaderpacks"), "shader")
-                    val resourcePacks = loadFromDir(File(server.path, "resourcepacks"), "resourcepack")
-                    mods + shaders + resourcePacks
-                }
-                1 -> loadFromDir(File(server.path, "plugins"), "plugin")
-                2 -> loadWorlds(File(server.path, "worlds"))
+                0 -> loadFromDir(File(serverRoot, "mods"), "mod")
+                1 -> loadFromDir(File(serverRoot, "plugins"), "plugin")
+                2 -> loadWorlds(File(serverRoot, "worlds"))
                 else -> emptyList()
             }
 
@@ -90,12 +93,105 @@ class ModsViewModel @Inject constructor(
             if (_showDisabled.value) {
                 items = items.filter { !it.isEnabled }
             }
-            if (_showUpdates.value) {
-                // updates logic would go here if we had a manifest
-                // items = items.filter { it.hasUpdate }
-            }
 
             _installedContent.value = items
+        }
+    }
+
+    fun navigateTo(file: File) {
+        if (file.isDirectory) {
+            _currentBrowserPath.value = file
+            loadContent()
+        }
+    }
+
+    fun navigateBack() {
+        viewModelScope.launch {
+            val server = repository.getServerById(serverId) ?: return@launch
+            val serverRoot = File(server.path)
+            val current = _currentBrowserPath.value ?: return@launch
+            
+            if (current.absolutePath != serverRoot.absolutePath) {
+                _currentBrowserPath.value = current.parentFile
+                loadContent()
+            }
+        }
+    }
+
+    fun deleteFile(file: File) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            if (file.isDirectory) {
+                file.deleteRecursively()
+            } else {
+                file.delete()
+            }
+            loadContent()
+            _toastMessage.emit("Apagado: ${file.name}")
+        }
+    }
+
+    fun renameFile(file: File, newName: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val newFile = File(file.parentFile, newName)
+            if (file.renameTo(newFile)) {
+                loadContent()
+                _toastMessage.emit("Renomeado para $newName")
+            } else {
+                _toastMessage.emit("Erro ao renomear")
+            }
+        }
+    }
+
+    fun copyFile(file: File) {
+        clipboardFile = file
+        viewModelScope.launch { _toastMessage.emit("Copiado: ${file.name}") }
+    }
+
+    fun pasteFile() {
+        val targetDir = _currentBrowserPath.value ?: return
+        val source = clipboardFile ?: return
+        
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                _toastMessage.emit("Colando...")
+                val target = File(targetDir, source.name)
+                if (source.isDirectory) {
+                    source.copyRecursively(target, overwrite = true)
+                } else {
+                    source.copyTo(target, overwrite = true)
+                }
+                loadContent()
+                _toastMessage.emit("Colado com sucesso!")
+            } catch (e: Exception) {
+                _toastMessage.emit("Erro ao colar: ${e.message}")
+            }
+        }
+    }
+
+    fun readFile(file: File): String {
+        return try {
+            file.readText()
+        } catch (e: Exception) {
+            "Erro ao ler arquivo: ${e.message}"
+        }
+    }
+
+    fun saveFile(file: File, content: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                file.writeText(content)
+                _toastMessage.emit("Arquivo salvo!")
+            } catch (e: Exception) {
+                _toastMessage.emit("Erro ao salvar: ${e.message}")
+            }
+        }
+    }
+
+    fun createFolder(name: String) {
+        val current = _currentBrowserPath.value ?: return
+        val newFolder = File(current, name)
+        if (newFolder.mkdirs()) {
+            loadContent()
         }
     }
 
@@ -204,6 +300,7 @@ class ModsViewModel @Inject constructor(
                     file.delete()
                 }
                 loadContent()
+                _toastMessage.emit("${item.name} removido")
             }
         }
     }
