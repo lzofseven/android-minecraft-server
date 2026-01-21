@@ -215,14 +215,26 @@ class RealServerManager @Inject constructor(
                             if (joinMatch != null) {
                                 val playerName = joinMatch.groupValues[1]
                                 addPlayer(server.id, playerName)
-                                // Player join notification disabled to reduce notification spam
-                                // TODO: Re-enable when settings screen is implemented
-                                // notificationHelper.showNotification(
-                                //     NotificationHelper.CHANNEL_PLAYERS,
-                                //     200 + playerName.hashCode(), 
-                                //     "Jogador Conectado",
-                                //     "$playerName entrou no servidor."
-                                // )
+                                
+                                // Check if player notifications are enabled in config
+                                val configFile = java.io.File(server.path, "manager_config.properties")
+                                var notifyPlayers = true // Default to true
+                                if (configFile.exists()) {
+                                    try {
+                                        val props = java.util.Properties()
+                                        configFile.inputStream().use { props.load(it) }
+                                        notifyPlayers = props.getProperty("notifyPlayers", "true").toBoolean()
+                                    } catch (e: Exception) { e.printStackTrace() }
+                                }
+                                
+                                if (notifyPlayers) {
+                                    notificationHelper.showNotification(
+                                        NotificationHelper.CHANNEL_PLAYERS,
+                                        200 + playerName.hashCode(), 
+                                        "Jogador Conectado",
+                                        "$playerName entrou no servidor."
+                                    )
+                                }
                             }
                             
                             // Parse 'left the game'
