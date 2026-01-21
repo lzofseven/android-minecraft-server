@@ -123,12 +123,14 @@ fun DashboardScreen(
                     item {
                         val playitStatus by viewModel.playitStatus.collectAsState()
                         val claimLink by viewModel.playitClaimLink.collectAsState()
+                        val playitAddress by viewModel.playitAddress.collectAsState()
                         
                         // Always show if it's not stopped, OR if we have a claim link/address
-                        if (playitStatus != "Stopped" || claimLink != null) {
+                        if (playitStatus != "Stopped" || claimLink != null || playitAddress != null) {
                             PlayitStatusCard(
                                 status = playitStatus, 
-                                claimLink = claimLink
+                                claimLink = claimLink,
+                                address = playitAddress
                             )
                         }
                     }
@@ -606,7 +608,10 @@ fun ConsoleLogLine(time: String, msg: String) {
     Row {
         Text(time, color = PrimaryDark, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(8.dp))
-        Text(msg, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+        Text(
+            text = com.lzofseven.mcserver.util.MotdUtils.parseMinecraftColors(msg),
+            style = MaterialTheme.typography.labelSmall
+        )
     }
 }
 
@@ -802,7 +807,7 @@ fun PermissionDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
 }
 
 @Composable
-fun PlayitStatusCard(status: String, claimLink: String?) {
+fun PlayitStatusCard(status: String, claimLink: String?, address: String?) {
     val context = androidx.compose.ui.platform.LocalContext.current
     Surface(
         color = SurfaceDark.copy(alpha = 0.5f),
@@ -815,20 +820,51 @@ fun PlayitStatusCard(status: String, claimLink: String?) {
                     modifier = Modifier
                         .size(12.dp)
                         .clip(CircleShape)
-                        .background(if (status == "Running") Color.Green else Color.Yellow)
+                        .background(if (status == "Running" || status == "Ready") Color.Green else if (status == "Downloading...") Color.Blue else Color.Yellow)
                 )
                 Spacer(Modifier.width(12.dp))
-                Text("NETWORK TUNNEL (PLAYIT.GG)", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f), fontWeight = FontWeight.Black)
+                Text("ACESSO PÚBLICO (PLAYIT.GG)", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f), fontWeight = FontWeight.Black)
             }
             
             Spacer(Modifier.height(12.dp))
             
             Text(
-                text = if (status == "Running") "📡 Túnel Ativo" else "⏳ $status",
+                text = if (address != null) "📡 Servidor Público!" else if (status == "Running") "📡 Túnel Ativo (Aguardando IP)" else "⏳ $status",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
+
+            if (address != null) {
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    color = Color.White.copy(0.05f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = address,
+                            color = PrimaryDark,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        IconButton(onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("Minecraft IP", address)
+                            clipboard.setPrimaryClip(clip)
+                            android.widget.Toast.makeText(context, "IP copiado!", android.widget.Toast.LENGTH_SHORT).show()
+                        }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.ContentCopy, null, tint = Color.White.copy(0.4f), modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
             
             if (claimLink != null) {
                 Spacer(Modifier.height(12.dp))
@@ -838,13 +874,26 @@ fun PlayitStatusCard(status: String, claimLink: String?) {
                         val clip = android.content.ClipData.newPlainText("Playit Claim Link", claimLink)
                         clipboard.setPrimaryClip(clip)
                         android.widget.Toast.makeText(context, "Link de resgate copiado!", android.widget.Toast.LENGTH_SHORT).show()
+                        
+                        // Open link in browser
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(claimLink))
+                        intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                        context.startActivity(intent)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryDark.copy(alpha = 0.2f)),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("COPIAR LINK DE RESGATE", color = PrimaryDark, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("RESGATAR ENDEREÇO", color = PrimaryDark, fontWeight = FontWeight.Black, fontSize = 12.sp)
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Clique para vincular seu servidor e ganhar um IP fixo.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(0.3f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }

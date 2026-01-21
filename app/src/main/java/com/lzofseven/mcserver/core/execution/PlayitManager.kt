@@ -69,6 +69,9 @@ class PlayitManager @Inject constructor(
         return false
     }
 
+    private val _address = MutableStateFlow<String?>(null)
+    val address: StateFlow<String?> = _address
+
     fun start() {
         if (process != null) return
         
@@ -77,6 +80,9 @@ class PlayitManager @Inject constructor(
             
             _status.value = "Starting..."
             try {
+                _claimLink.value = null
+                _address.value = null
+                
                 val builder = ProcessBuilder(playitBin.absolutePath, "--secret-path", File(context.filesDir, "playit_secret").absolutePath)
                 builder.directory(context.filesDir)
                 builder.redirectErrorStream(true)
@@ -98,7 +104,8 @@ class PlayitManager @Inject constructor(
                         
                         // Parse active tunnel address
                         if (logLine.contains("tunnel running at:")) {
-                            // Extract address if needed
+                            val addr = logLine.substringAfter("tunnel running at:").trim()
+                            _address.value = addr
                         }
                     }
                 }
@@ -116,5 +123,6 @@ class PlayitManager @Inject constructor(
         process = null
         _status.value = "Stopped"
         _claimLink.value = null
+        _address.value = null
     }
 }

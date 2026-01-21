@@ -111,12 +111,13 @@ fun ModsScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            modifier = Modifier.weight(1f).height(48.dp),
+                            modifier = Modifier.weight(1f).height(52.dp),
                             placeholder = { Text("Buscar...", color = Color.White.copy(0.3f), fontSize = 14.sp) },
-                            leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(18.dp)) },
-                            shape = RoundedCornerShape(10.dp),
+                            leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(20.dp)) },
+                            shape = RoundedCornerShape(12.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color.White.copy(0.1f),
+                                focusedBorderColor = Color.White.copy(0.15f),
                                 unfocusedBorderColor = Color.White.copy(0.1f),
                                 unfocusedContainerColor = Color.White.copy(0.05f),
                                 focusedContainerColor = Color.White.copy(0.08f),

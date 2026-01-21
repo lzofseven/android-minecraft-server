@@ -102,6 +102,7 @@ class DashboardViewModel @Inject constructor(
     
     val playitStatus = playitManager.status
     val playitClaimLink = playitManager.claimLink
+    val playitAddress = playitManager.address
     
     private var propertiesManager: ServerPropertiesManager? = null
     // removed private var installer manual instance
