@@ -567,7 +567,20 @@ fun MiniConsoleSection(logs: List<String>, onSeeConsole: () -> Unit) {
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (logs.isEmpty()) {
-                    Text("Nenhum log recente.", color = Color.White.copy(alpha = 0.3f), style = MaterialTheme.typography.labelSmall)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White.copy(0.15f),
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("Servidor parado", color = Color.White.copy(0.4f), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Text("Inicie o servidor para ver os logs", color = Color.White.copy(0.25f), style = MaterialTheme.typography.labelSmall)
+                    }
                 } else {
                     logs.takeLast(3).forEach { logLine ->
                         // Extract time if possible, or just show msg

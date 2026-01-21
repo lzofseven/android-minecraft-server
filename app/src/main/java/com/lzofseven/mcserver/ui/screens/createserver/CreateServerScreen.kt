@@ -395,6 +395,11 @@ fun StepTwo(state: CreateServerState, viewModel: CreateServerViewModel) {
 fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
     var query by remember { mutableStateOf("") }
     
+    // Load trending mods on first render
+    LaunchedEffect(Unit) {
+        viewModel.loadTrendingMods()
+    }
+    
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Explorar Biblioteca", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
         Text("Adicione mods ou plugins agora para começar com tudo!", color = Color.White.copy(0.7f))
@@ -403,9 +408,13 @@ fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
             value = query,
             onValueChange = { 
                 query = it
-                viewModel.searchLibrary(it)
+                if (it.isNotBlank()) {
+                    viewModel.searchLibrary(it)
+                } else {
+                    viewModel.loadTrendingMods()
+                }
             },
-            placeholder = { Text("Buscar mods...") },
+            placeholder = { Text("Buscar mods e plugins...") },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             leadingIcon = { Icon(Icons.Default.Search, null, tint = PrimaryDark) },
@@ -423,9 +432,17 @@ fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
             Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = PrimaryDark)
             }
+        } else if (state.libraryResults.isEmpty()) {
+            Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Search, null, tint = Color.White.copy(0.2f), modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text("Nenhum resultado encontrado", color = Color.White.copy(0.5f))
+                }
+            }
         } else {
-            androidx.compose.foundation.lazy.LazyColumn(
-                modifier = Modifier.fillMaxWidth().height(300.dp),
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
@@ -442,17 +459,18 @@ fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
                             AsyncImage(
                                 model = item.iconUrl ?: "https://lh3.googleusercontent.com/aida-public/AB6AXuCwfrVy1tVAb2P64nfILPuylYzDWefOwHF251qSRzEp0xrLw1zRuRyS1TwbUVGstZ7Hd1h2lbIWTmme9atM1kDq7MA2HuNRk_yVkIXPkN8VK6On77IKdxXB2_HoP2CAXvSMbAAMV_Q_ixgnlis_A-slL40GFyzmbuW1fEzujtubzwlNfDK6OeB8ZUzFj6yTwMyXVU2ii1r9OgmjVTSm1WxffLOFkgNmowvuLCfRgynW10vEv7kq7F42ttsHnsnXYjJtlLUCJYlNBi_p",
                                 contentDescription = null,
-                                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))
+                                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp))
                             )
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(item.title, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text(item.description, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.6f), maxLines = 1)
+                                Text(item.title, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                                Text(item.description, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.6f), maxLines = 2)
                             }
+                            Spacer(Modifier.width(8.dp))
                             if (isQueued) {
                                 Icon(Icons.Default.Check, null, tint = PrimaryDark)
                             } else {
-                                Icon(Icons.Default.Add, null, tint = Color.White.copy(0.3f))
+                                Icon(Icons.Default.Add, null, tint = Color.White.copy(0.4f))
                             }
                         }
                     }
@@ -461,7 +479,7 @@ fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
         }
         
         if (state.queuedContent.isNotEmpty()) {
-            Text("${state.queuedContent.size} itens selecionados", color = PrimaryDark, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            Text("${state.queuedContent.size} itens selecionados para instalação", color = PrimaryDark, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
         }
     }
 }

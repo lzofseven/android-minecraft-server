@@ -80,6 +80,26 @@ class CreateServerViewModel @Inject constructor(
         }
     }
 
+    fun loadTrendingMods() {
+        if (_uiState.value.libraryResults.isNotEmpty()) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSearching = true)
+            try {
+                // Load trending/popular mods for the server type
+                val searchType = when(_uiState.value.type) {
+                    ServerType.PAPER -> "plugin"
+                    else -> "mod"
+                }
+                val results = modrinthRepository.search("", type = searchType, version = _uiState.value.version)
+                _uiState.value = _uiState.value.copy(libraryResults = results)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _uiState.value = _uiState.value.copy(isSearching = false)
+            }
+        }
+    }
+
     fun toggleModQueue(item: com.lzofseven.mcserver.data.model.ModrinthResult) {
         val currentQueue = _uiState.value.queuedContent.toMutableList()
         if (currentQueue.any { it.projectId == item.projectId }) {
