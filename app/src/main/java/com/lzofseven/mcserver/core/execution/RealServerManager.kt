@@ -152,10 +152,22 @@ class RealServerManager @Inject constructor(
                 return
             }
     
+            // Read CPU Core Limit from config
+            val configFile = File(server.path, "manager_config.properties")
+            var cpuCores = Runtime.getRuntime().availableProcessors()
+            if (configFile.exists()) {
+                try {
+                    val props = java.util.Properties()
+                    configFile.inputStream().use { props.load(it) }
+                    cpuCores = props.getProperty("cpuCores", cpuCores.toString()).toIntOrNull() ?: cpuCores
+                } catch (e: Exception) { e.printStackTrace() }
+            }
+
             commandPrefix = listOf(
                 executable.absolutePath,
                 "-Xms${server.ramAllocationMB}M",
                 "-Xmx${server.ramAllocationMB}M",
+                "-XX:ActiveProcessorCount=$cpuCores",
                 "-Djna.tmpdir=${context.cacheDir.absolutePath}",
                 "-Djava.io.tmpdir=${context.cacheDir.absolutePath}",
                 "-jar",
@@ -394,7 +406,7 @@ class RealServerManager @Inject constructor(
             
             while (processes.containsKey(serverId) && process.isAlive) {
                 try {
-                    kotlinx.coroutines.delay(5000) // Update every 5 seconds as user requested
+                    kotlinx.coroutines.delay(1000) // Update every 1 second as user requested
                     
                     val currentCpuTime = readProcessCpuTime(pid)
                     val currentWallTime = System.currentTimeMillis()

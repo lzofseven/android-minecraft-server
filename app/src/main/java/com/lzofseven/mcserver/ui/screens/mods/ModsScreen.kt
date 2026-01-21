@@ -40,7 +40,7 @@ fun ModsScreen(
     val toastMessage by viewModel.toastMessage.collectAsState("")
     
     val snackbarHostState = remember { SnackbarHostState() }
-    val tabs = listOf("Mods", "Plugins", "Mundos", "Arquivos")
+    val tabs = listOf("Mods", "Plugins", "Arquivos")
     
     var searchQuery by remember { mutableStateOf("") }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
@@ -102,7 +102,7 @@ fun ModsScreen(
                 Spacer(Modifier.height(16.dp))
 
                 // Search or Navigation
-                if (selectedTab < 3) {
+                if (selectedTab < 2) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -177,10 +177,10 @@ fun ModsScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            if (selectedTab < 3) {
+            if (selectedTab < 2) {
                 val filteredContent = content.filter { it.name.contains(searchQuery, ignoreCase = true) }
                 if (filteredContent.isEmpty()) {
-                    EmptyState(if (selectedTab == 0) "Nenhum mod instalado" else if (selectedTab == 1) "Nenhum plugin instalado" else "Nenhum mundo encontrado")
+                    EmptyState(if (selectedTab == 0) "Nenhum mod instalado" else "Nenhum plugin instalado")
                 } else {
                     LazyColumn(
                         contentPadding = PaddingValues(16.dp),
@@ -300,7 +300,7 @@ fun ContentCard(item: InstalledContent, onToggle: (InstalledContent) -> Unit, on
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        if (item.type == "world") Icons.Default.Public else Icons.Default.Extension,
+                        Icons.Default.Extension,
                         null,
                         tint = if(item.isEnabled) PrimaryDark else Color.White.copy(0.3f)
                     )
@@ -312,12 +312,10 @@ fun ContentCard(item: InstalledContent, onToggle: (InstalledContent) -> Unit, on
                 Text("Versão ${item.version} • Por ${item.author}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.4f))
             }
             
-            if (item.type != "world") {
-                CustomSwitch(
-                    checked = item.isEnabled,
-                    onCheckedChange = { onToggle(item) }
-                )
-            }
+            CustomSwitch(
+                checked = item.isEnabled,
+                onCheckedChange = { onToggle(item) }
+            )
             
             IconButton(onClick = { onDelete(item) }) {
                 Icon(Icons.Default.Delete, null, tint = Color.Red.copy(0.6f), modifier = Modifier.size(20.dp))

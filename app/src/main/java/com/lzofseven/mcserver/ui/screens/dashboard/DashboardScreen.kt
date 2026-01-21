@@ -141,6 +141,7 @@ fun DashboardScreen(
                         PerformanceStatsSection(
                             serverStats = serverStats,
                             statsHistory = statsHistory,
+                            serverStatus = serverStatus,
                             ramLimitGb = (serverEntity?.ramAllocationMB ?: 2048) / 1024.0,
                             onRamClick = { navController.navigate(Screen.Config.createRoute(serverEntity!!.id)) }
                         )
@@ -155,7 +156,9 @@ fun DashboardScreen(
                     item {
                         MiniConsoleSection(
                             logs = consoleLogs,
-                            onSeeConsole = { navController.navigate(Screen.Console.createRoute(serverEntity!!.id)) }
+                            serverStatus = serverStatus,
+                            onSeeConsole = { navController.navigate(Screen.Console.createRoute(serverEntity!!.id)) },
+                            onStartServer = { viewModel.toggleServer() }
                         )
                     }
                 }
@@ -335,13 +338,14 @@ fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName:
 fun PerformanceStatsSection(
     serverStats: com.lzofseven.mcserver.core.execution.RealServerManager.ServerStats, 
     statsHistory: List<com.lzofseven.mcserver.core.execution.RealServerManager.ServerStats>,
+    serverStatus: ServerStatus,
     ramLimitGb: Double,
     onRamClick: () -> Unit
 ) {
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("DESEMPENHO EM TEMPO REAL", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f), fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-            Text("Histórico (30s)", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.2f))
+            Text("Freq. 1s", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.2f))
         }
         Spacer(Modifier.height(16.dp))
         
@@ -353,6 +357,7 @@ fun PerformanceStatsSection(
                 icon = Icons.Default.Memory,
                 color = Color(0xFF42A5F5), // Blue
                 history = statsHistory.map { it.cpu.toFloat() / 100f },
+                serverStatus = serverStatus,
                 modifier = Modifier.weight(1f)
             )
             StatCardWithGraph(
@@ -362,6 +367,7 @@ fun PerformanceStatsSection(
                 icon = Icons.Default.Storage,
                 color = Color(0xFFAB47BC), // Purple
                 history = statsHistory.map { (it.ram / ramLimitGb).toFloat().coerceIn(0f, 1f) },
+                serverStatus = serverStatus,
                 modifier = Modifier.weight(1f),
                 onClick = onRamClick
             )
@@ -377,6 +383,7 @@ fun StatCardWithGraph(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     color: Color,
     history: List<Float>,
+    serverStatus: ServerStatus,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
@@ -402,7 +409,12 @@ fun StatCardWithGraph(
 
             Spacer(Modifier.height(16.dp))
             
-            HardwareGraph(history = history, color = color, modifier = Modifier.fillMaxWidth().height(40.dp))
+            if (serverStatus == ServerStatus.STOPPED) {
+                val idleUsage = if (title == "Processador") 0.05 else 0.15
+                HeartbeatGraph(color = color, usage = idleUsage, modifier = Modifier.fillMaxWidth().height(40.dp))
+            } else {
+                HardwareGraph(history = history, color = color, modifier = Modifier.fillMaxWidth().height(40.dp))
+            }
         }
     }
 }
@@ -570,30 +582,49 @@ fun HeartbeatGraph(color: Color, usage: Double, modifier: Modifier) {
         val height = size.height
         val path = androidx.compose.ui.graphics.Path()
         
-        val points = 30
+        val points = 50 // More points for smoother curve
         val step = width / points
         
         path.moveTo(0f, height / 2)
         
         for (i in 0..points) {
             val x = i * step
-            // Standard heartbeat pulse logic
-            val baseNoise = Math.sin((i + phase * points) * 0.8).toFloat() * 2f
-            val pulseIndex = (i + (phase * points).toInt()) % 15
+            // Standard heartbeat pulse logic - more defined
+            val baseNoise = Math.sin((i + phase * points) * 0.4).toFloat() * 1.5f
+            
+            // Pulse occurs every 20 points
+            val pulseCycle = 20
+            val pulseIndex = (i + (phase * points).toInt()) % pulseCycle
+            
             val spike = when (pulseIndex) {
-                5 -> (usage.toFloat() * height * 0.5f)
-                6 -> -(usage.toFloat() * height * 0.3f)
+                7 -> usage.toFloat() * height * 0.4f
+                8 -> -usage.toFloat() * height * 0.6f // Main spike
+                9 -> usage.toFloat() * height * 0.5f // Recovery
                 else -> 0f
             }
             
             val y = (height / 2) + baseNoise - spike
-            path.lineTo(x, y)
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
         
         drawPath(
             path = path,
             color = color.copy(alpha = 0.8f),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 2.5.dp.toPx(), 
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round
+            )
+        )
+        
+        // Add a subtle glow
+        drawPath(
+            path = path,
+            color = color.copy(alpha = 0.2f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 6.dp.toPx(), 
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
         )
     }
 }
@@ -655,49 +686,6 @@ fun ToolButton(title: String, desc: String, icon: androidx.compose.ui.graphics.v
     }
 }
 
-@Composable
-fun MiniConsoleSection(logs: List<String>, onSeeConsole: () -> Unit) {
-    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("LOGS RECENTES", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f), fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-            Text("Ver Console", style = MaterialTheme.typography.labelSmall, color = PrimaryDark, modifier = Modifier.clickable { onSeeConsole() })
-        }
-        Spacer(Modifier.height(12.dp))
-        
-        Surface(
-            color = Color.Black.copy(alpha = 0.4f),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (logs.isEmpty()) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            tint = Color.White.copy(0.15f),
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text("Servidor parado", color = Color.White.copy(0.4f), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        Text("Inicie o servidor para ver os logs", color = Color.White.copy(0.25f), style = MaterialTheme.typography.labelSmall)
-                    }
-                } else {
-                    logs.takeLast(3).forEach { logLine ->
-                        // Extract time if possible, or just show msg
-                        val time = if (logLine.startsWith("[")) logLine.substringBefore("]") + "]" else ""
-                        val msg = if (logLine.startsWith("[")) logLine.substringAfter("] ") else logLine
-                        ConsoleLogLine(time, msg)
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun ConsoleLogLine(time: String, msg: String) {
@@ -925,7 +913,7 @@ fun PlayitStatusCard(status: String, claimLink: String?, address: String?) {
             Spacer(Modifier.height(12.dp))
             
             Text(
-                text = if (address != null) "📡 Servidor Público!" else if (status == "Running") "📡 Túnel Ativo (Aguardando IP)" else "⏳ $status",
+                text = if (address != null) "📡 Servidor Público!" else if (claimLink != null) "📡 Túnel Ativo (Aguardando Resgate)" else if (status == "Running") "📡 Túnel Ativo (Aguardando IP)" else "⏳ $status",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color.White

@@ -68,7 +68,7 @@ class ModsViewModel @Inject constructor(
             val server = repository.getServerById(serverId) ?: return@launch
             val serverRoot = File(server.path)
             
-            if (_selectedTab.value == 3) {
+            if (_selectedTab.value == 2) {
                 // File Manager Logic
                 val currentDir = _currentBrowserPath.value ?: serverRoot
                 _currentBrowserPath.value = currentDir
@@ -82,7 +82,6 @@ class ModsViewModel @Inject constructor(
             var items = when (_selectedTab.value) {
                 0 -> loadFromDir(File(serverRoot, "mods"), "mod")
                 1 -> loadFromDir(File(serverRoot, "plugins"), "plugin")
-                2 -> loadWorlds(File(serverRoot, "worlds"))
                 else -> emptyList()
             }
 
