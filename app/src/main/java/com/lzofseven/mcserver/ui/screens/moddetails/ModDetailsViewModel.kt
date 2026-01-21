@@ -32,8 +32,16 @@ class ModDetailsViewModel @Inject constructor(
     private val _project = MutableStateFlow<ModrinthProject?>(null)
     val project: StateFlow<ModrinthProject?> = _project.asStateFlow()
 
+    private val _allVersions = MutableStateFlow<List<ModrinthVersion>>(emptyList())
+    
     private val _versions = MutableStateFlow<List<ModrinthVersion>>(emptyList())
     val versions: StateFlow<List<ModrinthVersion>> = _versions.asStateFlow()
+
+    private val _availableGameVersions = MutableStateFlow<List<String>>(emptyList())
+    val availableGameVersions: StateFlow<List<String>> = _availableGameVersions.asStateFlow()
+
+    private val _selectedGameVersion = MutableStateFlow<String?>(null)
+    val selectedGameVersion: StateFlow<String?> = _selectedGameVersion.asStateFlow()
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -55,7 +63,7 @@ class ModDetailsViewModel @Inject constructor(
                 // 1. Fetch Project
                 val projectDeferred = viewModelScope.async { modrinthRepository.getProject(projectId) }
                 
-                // 2. Fetch Versions (Filtered by Server)
+                // 2. Fetch ALL versions (no gameVersion filter for maximum options)
                 val server = serverRepository.getServerById(serverId)
                 val loader = if (server != null) {
                     when (server.type.lowercase()) {
@@ -66,15 +74,32 @@ class ModDetailsViewModel @Inject constructor(
                         else -> null
                     }
                 } else null
-                
-                val gameVersion = server?.version
 
                 val versionsDeferred = viewModelScope.async {
-                    modrinthRepository.getVersions(projectId, loader = loader, gameVersion = gameVersion)
+                    modrinthRepository.getVersions(projectId, loader = loader, gameVersion = null)
                 }
 
                 _project.value = projectDeferred.await()
-                _versions.value = versionsDeferred.await()
+                val allVers = versionsDeferred.await()
+                _allVersions.value = allVers
+                
+                // Extract unique game versions, sorted descending
+                val gameVersions = allVers
+                    .flatMap { it.gameVersions }
+                    .distinct()
+                    .sortedByDescending { v ->
+                        // Sort by numeric version parts
+                        v.split(".").mapNotNull { it.toIntOrNull() }.joinToString(".") { String.format("%03d", it) }
+                    }
+                _availableGameVersions.value = gameVersions
+                
+                // Default to server's version if available
+                val serverVersion = server?.version
+                if (serverVersion != null && gameVersions.contains(serverVersion)) {
+                    _selectedGameVersion.value = serverVersion
+                }
+                
+                applyFilter()
 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -82,6 +107,20 @@ class ModDetailsViewModel @Inject constructor(
             } finally {
                 _isLoading.value = false
             }
+        }
+    }
+
+    fun selectGameVersion(version: String?) {
+        _selectedGameVersion.value = version
+        applyFilter()
+    }
+
+    private fun applyFilter() {
+        val selected = _selectedGameVersion.value
+        _versions.value = if (selected == null) {
+            _allVersions.value
+        } else {
+            _allVersions.value.filter { it.gameVersions.contains(selected) }
         }
     }
 

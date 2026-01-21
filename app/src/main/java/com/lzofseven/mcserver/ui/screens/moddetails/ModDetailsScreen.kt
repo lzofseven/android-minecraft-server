@@ -25,7 +25,7 @@ import com.lzofseven.mcserver.ui.theme.BackgroundDark
 import com.lzofseven.mcserver.ui.theme.PrimaryDark
 import com.lzofseven.mcserver.ui.theme.SurfaceDark
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ModDetailsScreen(
     navController: NavController,
@@ -33,6 +33,8 @@ fun ModDetailsScreen(
 ) {
     val project by viewModel.project.collectAsState()
     val versions by viewModel.versions.collectAsState()
+    val availableGameVersions by viewModel.availableGameVersions.collectAsState()
+    val selectedGameVersion by viewModel.selectedGameVersion.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val downloadProgressMap by viewModel.downloadProgressMap.collectAsState()
     val context = LocalContext.current
@@ -90,14 +92,53 @@ fun ModDetailsScreen(
                         }
                     }
 
+                    // Version Filter
+                    if (availableGameVersions.size > 1) {
+                        item {
+                            Column {
+                                Text("Filtrar por Versão", style = MaterialTheme.typography.titleSmall, color = Color.White.copy(0.7f), modifier = Modifier.padding(top = 8.dp))
+                                Spacer(Modifier.height(8.dp))
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    // "All" chip
+                                    FilterChip(
+                                        selected = selectedGameVersion == null,
+                                        onClick = { viewModel.selectGameVersion(null) },
+                                        label = { Text("Todas (${viewModel.versions.value.count { selectedGameVersion == null } ?: availableGameVersions.size})") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = PrimaryDark.copy(0.2f),
+                                            selectedLabelColor = PrimaryDark,
+                                            labelColor = Color.White.copy(0.7f)
+                                        )
+                                    )
+                                    // Version chips (show first 10 most recent)
+                                    availableGameVersions.take(10).forEach { version ->
+                                        FilterChip(
+                                            selected = selectedGameVersion == version,
+                                            onClick = { viewModel.selectGameVersion(version) },
+                                            label = { Text(version) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = PrimaryDark.copy(0.2f),
+                                                selectedLabelColor = PrimaryDark,
+                                                labelColor = Color.White.copy(0.7f)
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Versions List Title
                     item {
-                        Text("Versões Compatíveis", style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
+                        Text("Versões Compatíveis (${versions.size})", style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                     }
 
                     if (versions.isEmpty()) {
                         item {
-                            Text("Nenhuma versão encontrada para este servidor.", color = Color.White.copy(0.5f))
+                            Text("Nenhuma versão encontrada para este filtro.", color = Color.White.copy(0.5f))
                         }
                     } else {
                         items(versions) { version ->
