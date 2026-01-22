@@ -28,12 +28,7 @@ class CreateServerViewModel @Inject constructor(
     }
 
     fun updateName(name: String) {
-        val sanitizedName = name.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(30)
-        val defaultPath = "/storage/emulated/0/MCServers/$sanitizedName"
-        _uiState.value = _uiState.value.copy(
-            name = name,
-            path = if (_uiState.value.path.isEmpty() || _uiState.value.path.startsWith("/storage/emulated/0/MCServers/")) defaultPath else _uiState.value.path
-        )
+        _uiState.value = _uiState.value.copy(name = name)
     }
 
     fun updateVersion(version: String) {
@@ -135,6 +130,31 @@ class CreateServerViewModel @Inject constructor(
         }
     }
 
+    fun updateAdvSettings(
+        userId: String? = null, // Placeholder to match signature if needed
+        allowFlight: Boolean? = null,
+        pvp: Boolean? = null,
+        spawnAnimals: Boolean? = null,
+        spawnNpcs: Boolean? = null,
+        generateStructures: Boolean? = null,
+        allowNether: Boolean? = null,
+        viewDistance: Int? = null,
+        maxPlayers: Int? = null
+    ) {
+        var newState = _uiState.value
+        if (allowFlight != null) newState = newState.copy(allowFlight = allowFlight)
+        if (pvp != null) newState = newState.copy(pvp = pvp)
+        if (spawnAnimals != null) newState = newState.copy(spawnAnimals = spawnAnimals)
+        if (spawnNpcs != null) newState = newState.copy(spawnNpcs = spawnNpcs)
+        if (generateStructures != null) newState = newState.copy(generateStructures = generateStructures)
+        if (allowNether != null) newState = newState.copy(allowNether = allowNether)
+        if (viewDistance != null) newState = newState.copy(viewDistance = viewDistance)
+        if (maxPlayers != null) newState = newState.copy(maxPlayers = maxPlayers)
+        _uiState.value = newState
+    }
+
+    // ... existing searchLibrary, etc ...
+
     fun createServer(context: android.content.Context, uri: String? = null, onSuccess: () -> Unit) {
         viewModelScope.launch {
             val state = _uiState.value
@@ -148,7 +168,25 @@ class CreateServerViewModel @Inject constructor(
             )
             repository.insertServer(newServer)
             
-            // Save initial server.properties
+            // ... (directories creation logic same as before) ...
+            if (state.path.startsWith("content://")) {
+            } else {
+                val serverDir = java.io.File(state.path)
+                if (!serverDir.exists()) serverDir.mkdirs()
+            }
+            
+            // Save version metadata
+            try {
+                val metadata = com.lzofseven.mcserver.core.metadata.ServerMetadata(
+                    version = state.version,
+                    type = state.type.name
+                )
+                com.lzofseven.mcserver.core.metadata.ServerMetadata.save(context, state.path, metadata)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            
+            // Save server.properties
             try {
                 val propsManager = com.lzofseven.mcserver.util.ServerPropertiesManager(context, uri ?: state.path)
                 val initialProps = mapOf(
@@ -157,11 +195,18 @@ class CreateServerViewModel @Inject constructor(
                     "gamemode" to state.gameMode.lowercase(),
                     "online-mode" to state.onlineMode.toString(),
                     "server-port" to "25565",
-                    "max-players" to "20"
+                    "max-players" to state.maxPlayers.toString(),
+                    "view-distance" to state.viewDistance.toString(),
+                    "allow-flight" to state.allowFlight.toString(),
+                    "pvp" to state.pvp.toString(),
+                    "spawn-animals" to state.spawnAnimals.toString(),
+                    "spawn-npcs" to state.spawnNpcs.toString(),
+                    "generate-structures" to state.generateStructures.toString(),
+                    "allow-nether" to state.allowNether.toString()
                 )
                 propsManager.save(initialProps)
 
-                // Save icon if selected
+                // Save icon logic
                 state.serverIconUri?.let { uri ->
                     val inputStream = context.contentResolver.openInputStream(uri)
                     val originalBitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
@@ -170,7 +215,6 @@ class CreateServerViewModel @Inject constructor(
                     if (originalBitmap != null) {
                         val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(originalBitmap, 64, 64, true)
                         val iconFile = java.io.File(state.path, "server-icon.png")
-                        // Ensure parent dir exists (it should be created by insertServer or the platform)
                         iconFile.parentFile?.mkdirs()
                         val outStream = java.io.FileOutputStream(iconFile)
                         scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outStream)
@@ -261,7 +305,7 @@ class CreateServerViewModel @Inject constructor(
 }
 
 data class CreateServerState(
-    val currentStep: Int = 0, // 0: Name/Type, 1: Version/RAM, 2: Identity, 3: Library/Path
+    val currentStep: Int = 0,
     val name: String = "",
     val type: ServerType = ServerType.PAPER,
     val availableVersions: List<String> = emptyList(),
@@ -270,9 +314,20 @@ data class CreateServerState(
     val path: String = "",
     val gameMode: String = "Survival",
     val difficulty: String = "Normal",
-    val onlineMode: Boolean = false, // false = Cracked (Offline), true = Premium
+    val onlineMode: Boolean = false,
     val motd: String = "A Minecraft Server",
     val serverIconUri: android.net.Uri? = null,
+    
+    // Advanced Settings
+    val allowFlight: Boolean = false,
+    val pvp: Boolean = true,
+    val spawnAnimals: Boolean = true,
+    val spawnNpcs: Boolean = true,
+    val generateStructures: Boolean = true,
+    val allowNether: Boolean = true,
+    val viewDistance: Int = 10,
+    val maxPlayers: Int = 20,
+
     val queuedContent: List<com.lzofseven.mcserver.data.model.ModrinthResult> = emptyList(),
     val libraryResults: List<com.lzofseven.mcserver.data.model.ModrinthResult> = emptyList(),
     val isSearching: Boolean = false

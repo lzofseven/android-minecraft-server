@@ -67,8 +67,6 @@ object McVersionUtils {
             "fabric" -> getFabricUrl(version)
             "forge" -> getForgeUrl(version)
             "neoforge" -> getNeoForgeUrl(version)
-            "pocketmine" -> getPocketMineUrl(version)
-            "bedrock" -> getBedrockUrl(version)
             else -> throw IllegalArgumentException("Unsupported server type: $type")
         }
     }
@@ -252,25 +250,9 @@ object McVersionUtils {
         }
     }
     
-    private fun getPocketMineUrl(version: String): String {
-        // PocketMine-MP usually auto-updates or uses a generic "latest" URL.
-        // For specific versions, we'd need to look up GitHub releases.
-        // For now, we'll support "Latest" and specific tags if needed.
-        if (version.lowercase() == "latest" || version.isEmpty()) {
-            return "https://github.com/pmmp/PocketMine-MP/releases/latest/download/PocketMine-MP.phar"
-        }
-        return "https://github.com/pmmp/PocketMine-MP/releases/download/$version/PocketMine-MP.phar"
-    }
 
-    private fun getBedrockUrl(version: String): String {
-        // Type BEDROCK in our enum means "Paper with Geyser".
-        // So we return the Paper URL for the given version.
-        return getPaperUrl(version)
-    }
     
-    fun getGeyserUrl(): String {
-        return "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
-    }
+
     
     // -- Version Comparison Logic --
     

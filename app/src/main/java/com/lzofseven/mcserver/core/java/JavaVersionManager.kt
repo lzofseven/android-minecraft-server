@@ -39,12 +39,8 @@ class JavaVersionManager @Inject constructor(
     }
 
     fun getJavaExecutable(version: Int): File {
-        // Map Java 8/16 to 17 until we have Java 8 in assets
-        val targetVersion = when {
-            version <= 16 -> 17
-            version >= 21 -> 21
-            else -> version
-        }
+        // Map to available runtimes: Java 17 for everything up to v17, Java 21 for v21+
+        val targetVersion = if (version <= 17) 17 else 21
         return File(runtimesDir, "java-$targetVersion/bin/java")
     }
 
@@ -59,12 +55,8 @@ class JavaVersionManager @Inject constructor(
     }
 
     fun installJava(version: Int): Flow<DownloadStatus> = flow {
-        // Map to available runtimes until we have all versions in assets
-        val targetVersion = when {
-            version <= 16 -> 17
-            version >= 21 -> 21
-            else -> version
-        }
+        // Map to available runtimes: Java 17 for everything up to v17, Java 21 for v21+
+        val targetVersion = if (version <= 17) 17 else 21
         val installDir = File(runtimesDir, "java-$targetVersion")
         
         if (isJavaInstalled(targetVersion)) {

@@ -39,7 +39,7 @@ class PlayersViewModel @Inject constructor(
     private val _onlinePlayers = realServerManager.getPlayerListFlow(serverId)
     val onlinePlayers: kotlinx.coroutines.flow.Flow<List<String>> = _onlinePlayers
 
-    val filteredPlayers = kotlinx.coroutines.flow.combine(_onlinePlayers, _searchQuery) { players, query ->
+    val filteredPlayers = kotlinx.coroutines.flow.combine(_onlinePlayers, _searchQuery) { players: List<String>, query: String ->
         if (query.isBlank()) players else players.filter { it.contains(query, ignoreCase = true) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

@@ -5,7 +5,5 @@ enum class ServerType(val displayName: String) {
     FABRIC("Fabric"),
     VANILLA("Vanilla"),
     FORGE("Forge"),
-    NEOFORGE("NeoForge"),
-    POCKETMINE("PocketMine"),
-    BEDROCK("Bedrock (Geyser)")
+    NEOFORGE("NeoForge")
 }

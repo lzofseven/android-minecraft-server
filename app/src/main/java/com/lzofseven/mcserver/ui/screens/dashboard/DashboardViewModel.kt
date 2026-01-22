@@ -243,41 +243,47 @@ class DashboardViewModel @Inject constructor(
                     }
                 }
 
+                // 1. Check if server is already running (Priority Stop)
+                if (serverManager.isRunning(serverId)) {
+                    log("Parando servidor...")
+                    stopServer()
+                    playitManager.stop()
+                    return@launch
+                }
+
+                // 2. Start Request Checks
+                
+                // Check EULA
                 if (!installer.isEulaAccepted(checkPath)) {
                     log("EULA nao aceita")
                     _showEulaDialog.value = true
                     return@launch
                 }
 
-            // check and download server.jar if missing
-            if (!downloadServerJarIfNeeded(server)) {
-                return@launch
-            }
+                // Check/Download Server JAR
+                if (!downloadServerJarIfNeeded(server)) {
+                    return@launch
+                }
 
-            // Java Check
-            val requiredJava = McVersionUtils.getRequiredJavaVersion(server.version)
-            val isInstalled = javaVersionManager.isJavaInstalled(requiredJava)
-            log("Java $requiredJava installed: $isInstalled")
-            
-            if (!isInstalled) {
-                log("Starting Java installation")
-                startJavaInstallation(requiredJava)
-                return@launch
-            }
-            
-            if (serverManager.isRunning(serverId)) {
-                log("Parando servidor...")
-                stopServer()
-                playitManager.stop()
-            } else {
+                // Java Check
+                val requiredJava = McVersionUtils.getRequiredJavaVersion(server.version)
+                val isInstalled = javaVersionManager.isJavaInstalled(requiredJava)
+                log("Java $requiredJava installed: $isInstalled")
+                
+                if (!isInstalled) {
+                    log("Starting Java installation")
+                    startJavaInstallation(requiredJava)
+                    return@launch
+                }
+                
                 log("Iniciando servidor...")
                 _navigateToConsole.emit(Unit)
                 startServer(server)
                 playitManager.start()
+
+            } finally {
+                isToggling = false
             }
-        } finally {
-            isToggling = false
-        }
     }
 }
 
@@ -359,10 +365,7 @@ class DashboardViewModel @Inject constructor(
 
     private suspend fun downloadServerJarIfNeeded(server: MCServerEntity): Boolean {
         val serverDir = File(server.path)
-        val isPocketMine = server.type.equals("POCKETMINE", ignoreCase = true)
-        val isBedrock = server.type.equals("BEDROCK", ignoreCase = true)
-        
-        val targetFilename = if (isPocketMine) "PocketMine-MP.phar" else "server.jar"
+        val targetFilename = "server.jar"
         val serverJar = File(serverDir, targetFilename)
         
         // 1. Download Base Server if missing
@@ -403,53 +406,7 @@ class DashboardViewModel @Inject constructor(
             }
         }
         
-        // 2. Download Geyser Plugin if Bedrock type
-        if (isBedrock) {
-            val pluginsDir = File(serverDir, "plugins")
-            if (!pluginsDir.exists()) pluginsDir.mkdirs()
-            
-            val geyserJar = File(pluginsDir, "Geyser-Spigot.jar")
-            if (!geyserJar.exists()) {
-                log("Geyser plugin not found, downloading...")
-                try {
-                     _serverStatus.value = ServerStatus.INSTALLING
-                     val geyserUrl = McVersionUtils.getGeyserUrl()
-                     // We can't easily use 'installer' for subfolders unless we create a specialized method or pass full path 
-                     // if installer accepts absolute path or relative.
-                     // Assuming installer.downloadServer takes a 'base path' (uri/path) and 'filename'. 
-                     // If it uses SAF, we might be limited to root.
-                     // However, 'installer' implementation (ServerInstaller) likely handles DocumentFile.
-                     
-                     // Workaround: Use simple OkHttp download if path is local file, or try to use installer if it supports subdirs.
-                     // Given current architecture, let's assume local file access for simplicity since we have updated RealServerManager with File().
-                     
-                     if (server.uri == null) {
-                         // Direct File Access
-                         val request = okhttp3.Request.Builder().url(geyserUrl).build()
-                         val response = OkHttpClient().newCall(request).execute()
-                         if (!response.isSuccessful) throw Exception("Failed to download Geyser")
-                         
-                         val sink = geyserJar.sink().buffer()
-                         sink.writeAll(response.body!!.source())
-                         sink.close()
-                         log("Geyser downloaded to ${geyserJar.absolutePath}")
-                     } else {
-                         // SAF - This is harder without extending Installer. 
-                         // For now, skip or warn. Or assume 'plugins' folder doesn't exist in SAF root view easily.
-                         // But we can try downloading to "Geyser-Spigot.jar" in ROOT and asking user to move it? No that's bad.
-                         // Let's just log a warning for SAF users or implement basic download.
-                         log("SAF Mode: Auto-download of Geyser into /plugins/ not fully supported yet. Please install Geyser manually.")
-                     }
-                     
-                } catch (e: Exception) {
-                    log("Failed to download Geyser: ${e.message}")
-                    // Don't block server start, just warn
-                } finally {
-                     _serverStatus.value = ServerStatus.STOPPED
-                     _downloadProgress.value = null
-                }
-            }
-        }
+
 
         return true
     }
