@@ -18,11 +18,21 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
+        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // Add javaVersion column with default value 17
+                database.execSQL("ALTER TABLE servers ADD COLUMN javaVersion INTEGER NOT NULL DEFAULT 17")
+            }
+        }
+
         return Room.databaseBuilder(
             context,
             AppDatabase::class.java,
             "mc_server_db"
-        ).fallbackToDestructiveMigration().build()
+        )
+        .addMigrations(MIGRATION_2_3)
+        .fallbackToDestructiveMigration()
+        .build()
     }
 
     @Provides

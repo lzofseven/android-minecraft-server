@@ -81,7 +81,7 @@ class ServerJarRepairManager @Inject constructor(
         if (validationResult is JarValidator.ValidationResult.Invalid || 
             validationResult is JarValidator.ValidationResult.Corrupted) {
             Log.i(TAG, "Validation failed: $validationResult - Initiating repair for $serverName")
-            return performRepair(serverPath, serverName, serverVersion)
+            return performRepair(serverPath, serverName, serverVersion, serverType)
         }
         
         Log.d(TAG, "JAR is valid, skipping repair")
@@ -94,7 +94,8 @@ class ServerJarRepairManager @Inject constructor(
     private fun performRepair(
         serverPath: String,
         serverName: String,
-        serverVersion: String? = null
+        serverVersion: String? = null,
+        serverType: String? = null
     ): Flow<RepairStatus> = flow {
         try {
             // 1. Detect version (SAF-aware)
@@ -116,43 +117,45 @@ class ServerJarRepairManager @Inject constructor(
             var downloadFailed = false
             var failureReason = ""
             
-            // Try Paper first
-            downloader.downloadPaper(detected.version, serverPath).collect { status ->
-                when (status) {
-                    is ServerJarDownloader.DownloadStatus.Downloading -> {
-                        emit(RepairStatus.Downloading(status.progress, status.downloadedMB, status.totalMB))
-                    }
-                    is ServerJarDownloader.DownloadStatus.Success -> {
-                        downloadedTempPath = status.filePath
-                    }
-                    is ServerJarDownloader.DownloadStatus.Failed -> {
-                        Log.w(TAG, "Paper download failed: ${status.error}")
-                        downloadFailed = true
-                        failureReason = status.error
-                    }
-                    else -> {}
-                }
-            }
+            // Download based on type, fallback only if specifically allowed or requested
+            val type = serverType?.lowercase() ?: detected.type.name.lowercase()
             
-            // If Paper failed, try Vanilla
-            if (downloadFailed && downloadedTempPath == null) {
-                downloadFailed = false 
-                
-                downloader.downloadVanilla(detected.version, serverPath).collect { status ->
+            suspend fun tryDownload(currentType: String): Boolean {
+                 var success = false
+                 val dFlow = when (currentType) {
+                     "paper" -> downloader.downloadPaper(detected.version, serverPath)
+                     "fabric" -> downloader.downloadFabric(detected.version, serverPath)
+                     else -> downloader.downloadVanilla(detected.version, serverPath)
+                 }
+                 
+                 dFlow.collect { status ->
                     when (status) {
                         is ServerJarDownloader.DownloadStatus.Downloading -> {
                             emit(RepairStatus.Downloading(status.progress, status.downloadedMB, status.totalMB))
                         }
                         is ServerJarDownloader.DownloadStatus.Success -> {
                             downloadedTempPath = status.filePath
+                            success = true
                         }
                         is ServerJarDownloader.DownloadStatus.Failed -> {
-                            Log.e(TAG, "Vanilla download also failed: ${status.error}")
-                            downloadFailed = true
-                            failureReason = "Failed to download both Paper and Vanilla: ${status.error}"
+                            Log.w(TAG, "$currentType download failed: ${status.error}")
+                            failureReason = status.error
                         }
                         else -> {}
                     }
+                }
+                return success
+            }
+
+            if (!tryDownload(type)) {
+                // If requested type failed, try Vanilla as absolute last resort only if it wasn't already tried
+                if (type != "vanilla") {
+                    Log.i(TAG, "Requested engine $type failed, trying Vanilla fallback...")
+                    if (!tryDownload("vanilla")) {
+                        downloadFailed = true
+                    }
+                } else {
+                    downloadFailed = true
                 }
             }
             

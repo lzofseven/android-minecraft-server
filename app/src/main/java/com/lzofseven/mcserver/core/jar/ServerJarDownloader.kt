@@ -349,4 +349,74 @@ class ServerJarDownloader @Inject constructor(
             null
         }
     }
+
+    /**
+     * Download Fabric server JAR
+     */
+    fun downloadFabric(version: String, outputPath: String): Flow<DownloadStatus> = flow {
+        emit(DownloadStatus.Idle)
+        Log.i(TAG, "Downloading Fabric $version to: $outputPath")
+        
+        try {
+            emit(DownloadStatus.Verifying("Fetching Fabric download URL..."))
+            val downloadUrl = com.lzofseven.mcserver.util.McVersionUtils.getDownloadUrl("fabric", version)
+            
+            val isSafUri = outputPath.startsWith("content://")
+            val tempFileName = "server.jar.tmp"
+            
+            val request = Request.Builder().url(downloadUrl).build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    emit(DownloadStatus.Failed("HTTP ${response.code}"))
+                    return@flow
+                }
+                
+                val body = response.body ?: throw Exception("Empty response")
+                val totalBytes = body.contentLength()
+                val totalMB = totalBytes / 1_000_000f
+                
+                val outputStream: OutputStream
+                if (isSafUri) {
+                    val treeUri = Uri.parse(outputPath)
+                    val docDir = DocumentFile.fromTreeUri(context, treeUri) ?: throw Exception("Cannot access SAF")
+                    docDir.findFile(tempFileName)?.delete()
+                    val tempDoc = docDir.createFile("application/java-archive", tempFileName) ?: throw Exception("Cannot create temp file")
+                    outputStream = context.contentResolver.openOutputStream(tempDoc.uri) ?: throw Exception("Cannot open stream")
+                } else {
+                    val file = File(outputPath, tempFileName)
+                    if (file.exists()) file.delete()
+                    outputStream = FileOutputStream(file)
+                }
+                
+                outputStream.use { output ->
+                    body.byteStream().use { input ->
+                        val buffer = ByteArray(8192)
+                        var downloaded = 0L
+                        var read: Int
+                        var lastProgress = 0
+                        while (input.read(buffer).also { read = it } != -1) {
+                            output.write(buffer, 0, read)
+                            downloaded += read
+                            val progress = if (totalBytes > 0) ((downloaded * 100) / totalBytes).toInt() else -1
+                            if (progress >= 0 && (progress - lastProgress >= 5 || progress == 100)) {
+                                emit(DownloadStatus.Downloading(progress, downloaded / 1_000_000f, totalMB))
+                                lastProgress = progress
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (isSafUri) {
+                val docDir = DocumentFile.fromTreeUri(context, Uri.parse(outputPath))!!
+                val tempDoc = docDir.findFile(tempFileName)!!
+                emit(DownloadStatus.Success(tempDoc.uri.toString()))
+            } else {
+                emit(DownloadStatus.Success(File(outputPath, tempFileName).absolutePath))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fabric download failed", e)
+            emit(DownloadStatus.Failed("Download error: ${e.message}"))
+        }
+    }.flowOn(Dispatchers.IO)
 }

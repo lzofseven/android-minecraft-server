@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -12,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import java.util.UUID
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,8 +35,8 @@ fun PlayersScreen(
     viewModel: PlayersViewModel = hiltViewModel()
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val ops by viewModel.ops.collectAsState()
-    val whitelist by viewModel.whitelist.collectAsState()
+    val ops by viewModel.filteredOps.collectAsState()
+    val whitelist by viewModel.filteredWhitelist.collectAsState()
     val onlinePlayers by viewModel.onlinePlayers.collectAsState(initial = emptyList())
     val filteredPlayers by viewModel.filteredPlayers.collectAsState()
     
@@ -44,6 +46,9 @@ fun PlayersScreen(
     // Whisper State
     var whisperTarget by remember { mutableStateOf<String?>(null) }
     var whisperMessage by remember { mutableStateOf("") }
+    
+    // Search State Hoisted
+    var isSearchVisible by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize().background(BackgroundDark)) {
         // ... (Scaffold structure omitted for brevity, keeping context)
@@ -52,11 +57,13 @@ fun PlayersScreen(
             topBar = {
                 TopAppBar(
                     title = { 
-                        Column {
-                            Text("Jogadores Online", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color.White)
-                            val onlinePlayersCount = onlinePlayers.size
-                            val gameMode by viewModel.gameMode.collectAsState()
-                            Text("$onlinePlayersCount Conectados • ${gameMode.replaceFirstChar { it.titlecase() }}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f))
+                        if (!isSearchVisible) {
+                            Column {
+                                Text("Jogadores Online", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color.White)
+                                val onlinePlayersCount = onlinePlayers.size
+                                val gameMode by viewModel.gameMode.collectAsState()
+                                Text("$onlinePlayersCount Conectados • ${gameMode.replaceFirstChar { it.titlecase() }}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f))
+                            }
                         }
                     },
                     // ... (nav icon and actions)
@@ -66,14 +73,13 @@ fun PlayersScreen(
                         }
                     },
                     actions = {
-                        var isSearchVisible by remember { mutableStateOf(false) }
                         val searchQuery by viewModel.searchQuery.collectAsState()
                         
                         if (isSearchVisible) {
                             TextField(
                                 value = searchQuery,
                                 onValueChange = { viewModel.onSearchQueryChange(it) },
-                                modifier = Modifier.width(180.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text("Buscar...", color = Color.White.copy(0.4f)) },
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = Color.Transparent,
@@ -168,34 +174,66 @@ fun PlayersScreen(
                              }
                          } else {
                              items(filteredPlayers) { player ->
+                                 val isOp = ops.any { it.name.equals(player, ignoreCase = true) }
                                  PlayerItem(
                                      name = player, 
                                      isOnline = true,
-                                     isAdmin = false, 
-                                     onRemove = { /* Kick logic todo */ },
-                                     onChatClick = { whisperTarget = player }
+                                     isAdmin = isOp, 
+                                     onRemove = { viewModel.kickPlayer(player) },
+                                     onChatClick = { whisperTarget = player },
+                                     onOpToggle = { 
+                                         if (isOp) viewModel.removeOp(com.lzofseven.mcserver.data.model.PlayerEntry(UUID.randomUUID().toString(), player)) 
+                                         else viewModel.addOp(player) 
+                                     },
+                                     onBanToggle = { viewModel.banPlayer(player) }
                                  )
                              }
                          }
                      } else if (selectedTab == 1) {
-                        items(ops) { player ->
-                            PlayerItem(
-                                name = player.name, 
-                                isOnline = onlinePlayers.contains(player.name),
-                                isAdmin = true, 
-                                onRemove = { viewModel.removeOp(player) },
-                                onChatClick = { whisperTarget = player.name }
-                            )
+                        if (ops.isEmpty()) {
+                            item {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.Shield, null, tint = Color.White.copy(0.2f), modifier = Modifier.size(48.dp))
+                                    Spacer(Modifier.height(8.dp))
+                                    Text("Nenhum operador configurado.", color = Color.White.copy(0.5f), fontSize = 14.sp)
+                                }
+                            }
+                        } else {
+                            items(ops) { player ->
+                                PlayerItem(
+                                    name = player.name, 
+                                    isOnline = onlinePlayers.any { it.equals(player.name, ignoreCase = true) },
+                                    isAdmin = true, 
+                                    onRemove = { viewModel.removeOp(player) },
+                                    onChatClick = { whisperTarget = player.name }
+                                )
+                            }
                         }
                     } else if (selectedTab == 2) {
-                        items(whitelist) { player ->
-                            PlayerItem(
-                                name = player.name, 
-                                isOnline = onlinePlayers.contains(player.name),
-                                isAdmin = false, 
-                                onRemove = { viewModel.removeWhitelist(player) },
-                                onChatClick = { whisperTarget = player.name }
-                            )
+                        if (whitelist.isEmpty()) {
+                            item {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.ListAlt, null, tint = Color.White.copy(0.2f), modifier = Modifier.size(48.dp))
+                                    Spacer(Modifier.height(8.dp))
+                                    Text("Lista de permissões vazia.", color = Color.White.copy(0.5f), fontSize = 14.sp)
+                                }
+                            }
+                        } else {
+                            items(whitelist) { player ->
+                                PlayerItem(
+                                    name = player.name, 
+                                    isOnline = onlinePlayers.any { it.equals(player.name, ignoreCase = true) },
+                                    isAdmin = false, 
+                                    onRemove = { viewModel.removeWhitelist(player) },
+                                    onChatClick = { whisperTarget = player.name }
+                                )
+                            }
                         }
                     }
                 }
@@ -255,12 +293,22 @@ fun RealTimeIndicator() {
 }
 
 @Composable
-fun PlayerItem(name: String, isOnline: Boolean, isAdmin: Boolean, onRemove: () -> Unit, onChatClick: () -> Unit) {
+fun PlayerItem(
+    name: String, 
+    isOnline: Boolean, 
+    isAdmin: Boolean, 
+    onRemove: () -> Unit, // Kick or Remove from list
+    onChatClick: () -> Unit,
+    onOpToggle: (() -> Unit)? = null,
+    onBanToggle: (() -> Unit)? = null
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Surface(
         color = Color.White.copy(alpha = 0.03f),
         shape = RoundedCornerShape(20.dp),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().clickable { showMenu = true }
     ) {
         Row(
             modifier = Modifier.padding(12.dp).fillMaxWidth(),
@@ -302,11 +350,53 @@ fun PlayerItem(name: String, isOnline: Boolean, isAdmin: Boolean, onRemove: () -
             }
             
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Actions exposed directly for quick access, but main interaction is via Menu now
                 IconButton(onClick = onChatClick, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.05f))) {
                     Icon(Icons.Default.ChatBubble, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(20.dp))
                 }
-                IconButton(onClick = onRemove, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(ErrorDark.copy(alpha = 0.1f))) {
-                    Icon(Icons.Default.Gavel, null, tint = ErrorDark, modifier = Modifier.size(20.dp))
+                
+                Box {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.05f))) {
+                        Icon(Icons.Default.MoreVert, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                    
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        modifier = Modifier.background(SurfaceDark).border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(12.dp))
+                    ) {
+                        if (isOnline) {
+                            DropdownMenuItem(
+                                text = { Text("Sussurrar Mensagem", color = Color.White) },
+                                onClick = { onChatClick(); showMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Chat, null, tint = PrimaryDark) }
+                            )
+                        }
+                        
+                        onOpToggle?.let { opAction ->
+                            DropdownMenuItem(
+                                text = { Text(if (isAdmin) "Remover Operador (Deop)" else "Tornar Operador (Op)", color = Color.White) },
+                                onClick = { opAction(); showMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Shield, null, tint = if (isAdmin) ErrorDark else PrimaryDark) }
+                            )
+                        }
+
+                        onBanToggle?.let { banAction ->
+                            DropdownMenuItem(
+                                text = { Text("Banir Jogador", color = ErrorDark) }, // Simple toggle for now, usually needs context
+                                onClick = { banAction(); showMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Block, null, tint = ErrorDark) }
+                            )
+                        }
+                        
+                        Divider(color = Color.White.copy(0.1f))
+                        
+                        DropdownMenuItem(
+                            text = { Text(if (isOnline) "Expulsar (Kick)" else "Remover da Lista", color = ErrorDark) },
+                            onClick = { onRemove(); showMenu = false },
+                            leadingIcon = { Icon(Icons.Default.Output, null, tint = ErrorDark) }
+                        )
+                    }
                 }
             }
         }

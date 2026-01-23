@@ -25,7 +25,7 @@ class ServerPropertiesManager(private val context: Context, private val path: St
         val uri = Uri.parse(path)
         val docFile = DocumentFile.fromTreeUri(context, uri)
         val fileDoc = docFile?.findFile("server.properties") ?: docFile?.createFile("text/plain", "server.properties")
-        fileDoc?.let { context.contentResolver.openOutputStream(it.uri) }
+        fileDoc?.let { context.contentResolver.openOutputStream(it.uri, "wt") }
     } else {
         val file = File(path, "server.properties")
         file.parentFile?.mkdirs()
@@ -42,9 +42,15 @@ class ServerPropertiesManager(private val context: Context, private val path: St
     }
 
     suspend fun save(updates: Map<String, String>) = withContext(Dispatchers.IO) {
+        // Ensure we have current properties before modifying
+        if (properties.isEmpty) {
+            load()
+        }
+        
         updates.forEach { (key, value) ->
             properties.setProperty(key, value)
         }
+        
         try {
             if (path.startsWith("content://")) {
                 getOutputStream()?.use { 
@@ -52,13 +58,13 @@ class ServerPropertiesManager(private val context: Context, private val path: St
                         properties.store(writer, "Minecraft Server Properties - Updated by MC Server Manager")
                     }
                 }
+                android.util.Log.d("ServerPropertiesManager", "Saved properties via SAF to $path")
             } else {
                 val file = File(path, "server.properties")
                 if (!file.parentFile.exists()) {
                     file.parentFile.mkdirs()
                 }
                 
-                // Use FileOutputStream directly to ensure disk write
                 java.io.FileOutputStream(file).use { fos ->
                     fos.writer(Charsets.UTF_8).use { writer ->
                         properties.store(writer, "Minecraft Server Properties - Updated by MC Server Manager")

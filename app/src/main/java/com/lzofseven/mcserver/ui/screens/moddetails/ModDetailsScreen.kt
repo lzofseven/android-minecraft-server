@@ -3,6 +3,7 @@ package com.lzofseven.mcserver.ui.screens.moddetails
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +39,7 @@ fun ModDetailsScreen(
     val selectedGameVersion by viewModel.selectedGameVersion.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val downloadProgressMap by viewModel.downloadProgressMap.collectAsState()
+    val compatibleLoaders by viewModel.compatibleLoaders.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(key1 = true) {
@@ -149,9 +152,62 @@ fun ModDetailsScreen(
                         }
                     }
 
+                    // Loader Filter (NEW)
+                    item {
+                        val selectedLoader by viewModel.selectedLoader.collectAsState()
+                        Column {
+                            Text("Filtrar por Loader", style = MaterialTheme.typography.titleSmall, color = Color.White.copy(0.7f))
+                            Spacer(Modifier.height(8.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val loaders = listOf(null to "Todos", "fabric" to "Fabric", "forge" to "Forge", "neoforge" to "NeoForge", "paper" to "Paper", "bukkit" to "Bukkit", "spigot" to "Spigot")
+                                items(loaders) { (loader, label) ->
+                                    FilterChip(
+                                        selected = selectedLoader == loader,
+                                        onClick = { viewModel.setLoaderFilter(loader) },
+                                        label = { Text(label) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = PrimaryDark,
+                                            selectedLabelColor = BackgroundDark,
+                                            containerColor = SurfaceDark,
+                                            labelColor = Color.White
+                                        ),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // Versions List Title
                     item {
-                        Text("Versões Compatíveis (${versions.size})", style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Versões Compatíveis (${versions.size})", 
+                                style = MaterialTheme.typography.titleMedium, 
+                                color = Color.White, 
+                                fontWeight = FontWeight.Bold
+                            )
+                            
+                            val showAlphaBeta by viewModel.showAlphaBeta.collectAsState()
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Beta/Alpha", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.4f))
+                                Switch(
+                                    checked = showAlphaBeta,
+                                    onCheckedChange = { viewModel.toggleAlphaBeta() },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = PrimaryDark,
+                                        checkedTrackColor = PrimaryDark.copy(alpha = 0.3f),
+                                        uncheckedThumbColor = Color.White.copy(alpha = 0.4f),
+                                        uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
+                                    ),
+                                    modifier = Modifier.scale(0.7f)
+                                )
+                            }
+                        }
                     }
 
                     if (versions.isEmpty()) {
@@ -160,7 +216,8 @@ fun ModDetailsScreen(
                         }
                     } else {
                         items(versions) { version ->
-                            VersionItem(version, downloadProgressMap[version.id]) {
+                            val isCompatible = compatibleLoaders.isEmpty() || version.loaders.any { it in compatibleLoaders }
+                            VersionItem(version, downloadProgressMap[version.id], isCompatible) {
                                 viewModel.downloadVersion(version)
                             }
                         }
@@ -172,7 +229,7 @@ fun ModDetailsScreen(
 }
 
 @Composable
-fun VersionItem(version: ModrinthVersion, progress: Float?, onDownload: () -> Unit) {
+fun VersionItem(version: ModrinthVersion, progress: Float?, isCompatible: Boolean, onDownload: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = SurfaceDark),
         shape = RoundedCornerShape(12.dp),
@@ -184,9 +241,17 @@ fun VersionItem(version: ModrinthVersion, progress: Float?, onDownload: () -> Un
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(version.versionNumber, style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(version.versionNumber, style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                    if (!isCompatible) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(color = com.lzofseven.mcserver.ui.theme.ErrorDark.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
+                            Text("Incompatível", color = com.lzofseven.mcserver.ui.theme.ErrorDark, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                        }
+                    }
+                }
                 Text(
-                    "${version.gameVersions.joinToString(", ")} • ${version.versionType}",
+                    "${version.gameVersions.joinToString(", ")} • ${version.loaders.joinToString(", ")}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(0.5f)
                 )

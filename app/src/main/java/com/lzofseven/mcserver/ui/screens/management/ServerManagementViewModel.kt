@@ -6,14 +6,18 @@ import androidx.lifecycle.viewModelScope
 import com.lzofseven.mcserver.data.repository.ServerRepository
 import com.lzofseven.mcserver.util.ServerPropertiesManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
-import javax.inject.Inject
-import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import com.lzofseven.mcserver.ui.screens.config.UiEvent
 
 @HiltViewModel
 class ServerManagementViewModel @Inject constructor(
@@ -65,17 +69,43 @@ class ServerManagementViewModel @Inject constructor(
     val allowNether: StateFlow<Boolean> = _allowNether.asStateFlow()
     private val _generateStructures = MutableStateFlow(true)
     val generateStructures: StateFlow<Boolean> = _generateStructures.asStateFlow()
+    private val _allowFlight = MutableStateFlow(false)
+    val allowFlight: StateFlow<Boolean> = _allowFlight.asStateFlow()
+    private val _spawnAnimals = MutableStateFlow(true)
+    val spawnAnimals: StateFlow<Boolean> = _spawnAnimals.asStateFlow()
+    private val _spawnNpcs = MutableStateFlow(true)
+    val spawnNpcs: StateFlow<Boolean> = _spawnNpcs.asStateFlow()
 
     // Performance
     private val _viewDistance = MutableStateFlow("10")
     val viewDistance: StateFlow<String> = _viewDistance.asStateFlow()
     private val _simulationDistance = MutableStateFlow("10")
     val simulationDistance: StateFlow<String> = _simulationDistance.asStateFlow()
+
+    private val _whiteList = MutableStateFlow(false)
+    val whiteList: StateFlow<Boolean> = _whiteList.asStateFlow()
+    
+    private val _uiEvent = MutableSharedFlow<UiEvent>()
+    val uiEvent = _uiEvent.asSharedFlow()
     
     private var propertiesManager: ServerPropertiesManager? = null
 
     init {
         loadProperties()
+        viewModelScope.launch {
+            val server = repository.getServerById(serverId)
+            if (server != null) {
+                val path = server.uri ?: server.path
+                if (path.startsWith("content://")) {
+                     val uri = android.net.Uri.parse(path)
+                     val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                     val iconDoc = rootDoc?.findFile("server-icon.png")
+                     _serverIconPath.value = iconDoc?.uri?.toString() ?: File(server.path, "server-icon.png").absolutePath
+                } else {
+                    _serverIconPath.value = File(server.path, "server-icon.png").absolutePath
+                }
+            }
+        }
     }
 
     private fun loadProperties() {
@@ -106,10 +136,15 @@ class ServerManagementViewModel @Inject constructor(
                 _difficulty.value = props["difficulty"] ?: "normal"
                 _hardcore.value = props["hardcore"]?.toBoolean() ?: false
                 _allowNether.value = props["allow-nether"]?.toBoolean() ?: true
+                _allowNether.value = props["allow-nether"]?.toBoolean() ?: true
                 _generateStructures.value = props["generate-structures"]?.toBoolean() ?: true
+                _allowFlight.value = props["allow-flight"]?.toBoolean() ?: false
+                _spawnAnimals.value = props["spawn-animals"]?.toBoolean() ?: true
+                _spawnNpcs.value = props["spawn-npcs"]?.toBoolean() ?: true
 
                 _viewDistance.value = props["view-distance"] ?: "10"
                 _simulationDistance.value = props["simulation-distance"] ?: "10"
+                _whiteList.value = props["white-list"]?.toBoolean() ?: false
             } catch (e: Exception) {
                 log("Error loading properties: ${e.message}")
                 e.printStackTrace()
@@ -140,9 +175,13 @@ class ServerManagementViewModel @Inject constructor(
     fun setHardcore(value: Boolean) { _hardcore.value = value }
     fun setAllowNether(value: Boolean) { _allowNether.value = value }
     fun setGenerateStructures(value: Boolean) { _generateStructures.value = value }
+    fun setAllowFlight(value: Boolean) { _allowFlight.value = value }
+    fun setSpawnAnimals(value: Boolean) { _spawnAnimals.value = value }
+    fun setSpawnNpcs(value: Boolean) { _spawnNpcs.value = value }
 
     fun setViewDistance(value: String) { _viewDistance.value = value }
     fun setSimulationDistance(value: String) { _simulationDistance.value = value }
+    fun setWhiteList(value: Boolean) { _whiteList.value = value }
 
     fun saveProperties() {
         viewModelScope.launch {
@@ -163,10 +202,16 @@ class ServerManagementViewModel @Inject constructor(
                 "difficulty" to _difficulty.value,
                 "hardcore" to _hardcore.value.toString(),
                 "allow-nether" to _allowNether.value.toString(),
+                "allow-nether" to _allowNether.value.toString(),
                 "generate-structures" to _generateStructures.value.toString(),
+                "allow-flight" to _allowFlight.value.toString(),
+                "spawn-animals" to _spawnAnimals.value.toString(),
+                "spawn-npcs" to _spawnNpcs.value.toString(),
                 "view-distance" to _viewDistance.value,
-                "simulation-distance" to _simulationDistance.value
+                "simulation-distance" to _simulationDistance.value,
+                "white-list" to _whiteList.value.toString()
             ))
+            _uiEvent.emit(UiEvent.ShowToast("Alterações aplicadas com sucesso!"))
         }
     }
 
@@ -176,15 +221,6 @@ class ServerManagementViewModel @Inject constructor(
     private val _serverIconPath = MutableStateFlow<String?>(null)
     val serverIconPath: StateFlow<String?> = _serverIconPath.asStateFlow()
 
-    init {
-        loadProperties()
-        viewModelScope.launch {
-            val server = repository.getServerById(serverId)
-            if (server != null) {
-                _serverIconPath.value = File(server.path, "server-icon.png").absolutePath
-            }
-        }
-    }
 
     fun setServerIcon(uri: android.net.Uri) {
         viewModelScope.launch {
@@ -196,14 +232,39 @@ class ServerManagementViewModel @Inject constructor(
 
                 if (originalBitmap != null) {
                     val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(originalBitmap, 64, 64, true)
-                    val iconFile = File(server.path, "server-icon.png")
-                    val outStream = java.io.FileOutputStream(iconFile)
-                    scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outStream)
-                    outStream.close()
                     
-                    log("Server icon updated: ${iconFile.absolutePath}")
-                    _serverIconPath.value = iconFile.absolutePath // Update path to trigger refresh if needed
-                    _serverIconUpdate.value = System.currentTimeMillis() // Signal UI update
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        if (server.uri != null) {
+                             // SAF Logic
+                             val rootUri = android.net.Uri.parse(server.uri)
+                             val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, rootUri)
+                             if (rootDoc != null && rootDoc.exists()) {
+                                 // Delete existing if any
+                                 rootDoc.findFile("server-icon.png")?.delete()
+                                 // Create new
+                                 val iconDoc = rootDoc.createFile("image/png", "server-icon.png")
+                                 iconDoc?.let { doc ->
+                                     context.contentResolver.openOutputStream(doc.uri, "wt")?.use { out ->
+                                         scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                                     }
+                                     log("Server icon updated via SAF: ${doc.uri}")
+                                     _serverIconPath.value = doc.uri.toString()
+                                     _serverIconUpdate.value = System.currentTimeMillis()
+                                     _uiEvent.emit(UiEvent.ShowToast("Ícone atualizado!"))
+                                 }
+                             }
+                        } else {
+                            // File Logic
+                            val iconFile = File(server.path, "server-icon.png")
+                            val outStream = java.io.FileOutputStream(iconFile)
+                            scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outStream)
+                            outStream.close()
+                            
+                            log("Server icon updated: ${iconFile.absolutePath}")
+                            _serverIconPath.value = iconFile.absolutePath
+                            _serverIconUpdate.value = System.currentTimeMillis()
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 log("Error setting server icon: ${e.message}")
@@ -216,14 +277,9 @@ class ServerManagementViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val server = repository.getServerById(serverId) ?: return@launch
-                val serverDir = File(server.path)
-                val opsJson = File(serverDir, "ops.json")
                 
-                // For simplicity, we create a basic ops.json entry
-                // In a perfect world we'd use mojang API to get UUID, 
-                // but for cracked/local servers, a random UUID often works or just the name for ops.txt
-                
-                if (opsJson.exists() || _onlineMode.value) {
+                withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    // Pre-calculate content
                     val uuid = java.util.UUID.randomUUID().toString()
                     val opEntry = """
                         [
@@ -235,15 +291,53 @@ class ServerManagementViewModel @Inject constructor(
                           }
                         ]
                     """.trimIndent()
-                    opsJson.writeText(opEntry)
-                    log("Granted OP to $username in ops.json")
-                } else {
-                    val opsTxt = File(serverDir, "ops.txt")
-                    opsTxt.writeText(username)
-                    log("Granted OP to $username in ops.txt")
+                    
+                    if (server.uri != null) {
+                         // SAF Logic
+                         val rootUri = android.net.Uri.parse(server.uri)
+                         val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, rootUri)
+                         if (rootDoc != null && rootDoc.exists()) {
+                             val opsJson = rootDoc.findFile("ops.json")
+                             
+                             if (opsJson != null || _onlineMode.value) {
+                                 // Write to ops.json (create or overwrite)
+                                 val target = opsJson ?: rootDoc.createFile("application/json", "ops.json")
+                                 target?.let { 
+                                     context.contentResolver.openOutputStream(it.uri, "wt")?.use { out ->
+                                         out.write(opEntry.toByteArray()) 
+                                     }
+                                 }
+                                 log("Granted OP to $username in ops.json (SAF)")
+                             } else {
+                                  // Fallback to ops.txt logic not implemented fully for SAF here, defaulting to JSON as it's standard
+                                  // Or create ops.txt
+                                  val opsTxt = rootDoc.findFile("ops.txt") ?: rootDoc.createFile("text/plain", "ops.txt")
+                                  opsTxt?.let {
+                                      context.contentResolver.openOutputStream(it.uri, "wt")?.use { out ->
+                                          out.write(username.toByteArray())
+                                      }
+                                  }
+                             }
+                         }
+                    } else {
+                        // File Logic
+                        val serverDir = File(server.path)
+                        val opsJson = File(serverDir, "ops.json")
+                        
+                        if (opsJson.exists() || _onlineMode.value) {
+                            opsJson.writeText(opEntry)
+                            log("Granted OP to $username in ops.json")
+                        } else {
+                            val opsTxt = File(serverDir, "ops.txt")
+                            opsTxt.writeText(username)
+                            log("Granted OP to $username in ops.txt")
+                         }
+                     }
+                     _uiEvent.emit(UiEvent.ShowToast("OP concedido a $username"))
                 }
             } catch (e: Exception) {
                 log("Error granting OP: ${e.message}")
+                _uiEvent.emit(UiEvent.ShowToast("Erro ao conceder OP"))
             }
         }
     }

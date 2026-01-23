@@ -13,6 +13,7 @@ data class MCServerEntity(
     val version: String,
     val type: String, // "Paper", "Fabric", "Vanilla", "Forge"
     val ramAllocationMB: Int,
+    val javaVersion: Int = 17, // New: support for multiple Java versions
     val autoStart: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 )

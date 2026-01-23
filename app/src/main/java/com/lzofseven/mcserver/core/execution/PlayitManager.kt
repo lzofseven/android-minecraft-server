@@ -237,8 +237,8 @@ class PlayitManager @Inject constructor(
 
     private fun extractAddress(line: String): String? {
         val patterns = listOf(
-            Regex(".*(?:address|url):?\\s*([a-z0-9.-]+\\.(?:playit\\.gg|ply\\.gg|joinmc\\.link)(?::\\d+)?)", RegexOption.IGNORE_CASE),
-            Regex("([a-z0-9.-]+\\.(?:playit\\.gg|ply\\.gg|joinmc\\.link)(?::\\d+)?)", RegexOption.IGNORE_CASE)
+            Regex(".*(?:address|url|tunnel):\\s*([a-z0-9.-]+(?:\\.[a-z]{2,})+(?::\\d+)?)", RegexOption.IGNORE_CASE),
+            Regex("([a-z0-9.-]+(?:\\.[a-z]{2,})+(?::\\d+)?)", RegexOption.IGNORE_CASE)
         )
         
         for (pattern in patterns) {

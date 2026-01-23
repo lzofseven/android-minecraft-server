@@ -47,6 +47,18 @@ fun ServerManagementScreen(
     val maxPlayers by viewModel.maxPlayers.collectAsState()
     val onlineMode by viewModel.onlineMode.collectAsState()
     val gameMode by viewModel.gameMode.collectAsState()
+    val whiteList by viewModel.whiteList.collectAsState()
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(key1 = true) {
+        viewModel.uiEvent.collect { event ->
+            when(event) {
+                is com.lzofseven.mcserver.ui.screens.config.UiEvent.ShowToast -> {
+                    android.widget.Toast.makeText(context, event.message, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     val serverPort by viewModel.serverPort.collectAsState()
     val serverIp by viewModel.serverIp.collectAsState()
@@ -61,7 +73,11 @@ fun ServerManagementScreen(
     val difficulty by viewModel.difficulty.collectAsState()
     val hardcore by viewModel.hardcore.collectAsState()
     val allowNether by viewModel.allowNether.collectAsState()
+
     val generateStructures by viewModel.generateStructures.collectAsState()
+    val allowFlight by viewModel.allowFlight.collectAsState()
+    val spawnAnimals by viewModel.spawnAnimals.collectAsState()
+    val spawnNpcs by viewModel.spawnNpcs.collectAsState()
 
     val viewDistance by viewModel.viewDistance.collectAsState()
     val simulationDistance by viewModel.simulationDistance.collectAsState()
@@ -99,12 +115,20 @@ fun ServerManagementScreen(
                 val iconUpdate by viewModel.serverIconUpdate.collectAsState()
                 var iconBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
                 
+                val context = androidx.compose.ui.platform.LocalContext.current
                 LaunchedEffect(iconPath, iconUpdate) {
                     if (iconPath != null) {
                         try {
-                            val file = java.io.File(iconPath!!)
-                            if (file.exists()) {
-                                iconBitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                            if (iconPath!!.startsWith("content://")) {
+                                val uri = android.net.Uri.parse(iconPath!!)
+                                context.contentResolver.openInputStream(uri)?.use { stream ->
+                                    iconBitmap = android.graphics.BitmapFactory.decodeStream(stream)
+                                }
+                            } else {
+                                val file = java.io.File(iconPath!!)
+                                if (file.exists()) {
+                                    iconBitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                                }
                             }
                         } catch (e: Exception) { e.printStackTrace() }
                     }
@@ -228,7 +252,7 @@ fun ServerManagementScreen(
 
                 ManagementToggle(
                     title = "Verificação de Conta",
-                    desc = "Modo Online (Exigir conta oficial Mojang)",
+                    desc = "Modo Online (Exigir conta oficial) - Reinício necessário",
                     checked = onlineMode,
                     onCheckedChange = { viewModel.setOnlineMode(it) }
                 )
@@ -236,11 +260,41 @@ fun ServerManagementScreen(
                 Spacer(Modifier.height(12.dp))
 
                 ManagementToggle(
+                    title = "Whitelist (Lista Branca)",
+                    desc = "Permitir apenas jogadores na lista",
+                    checked = whiteList,
+                    onCheckedChange = { viewModel.setWhiteList(it) }
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                ManagementToggle(
                     title = "Protocolo Query",
-                    desc = "Ativa estatísticas via Query",
+                    desc = "Ativa estatísticas via Query - Reinício necessário",
                     checked = enableQuery,
                     onCheckedChange = { viewModel.setEnableQuery(it) }
                 )
+
+                if (enableQuery) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceDark.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("💡", fontSize = 18.sp)
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "O Query mostra quem está online e o mapa, mas NÃO fornece coordenadas exatas. Para ver a localização, use RCON ou plugins.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
 
                 Spacer(Modifier.height(12.dp))
 
@@ -402,6 +456,33 @@ fun ServerManagementScreen(
                     desc = "Morte permanente",
                     checked = hardcore,
                     onCheckedChange = { viewModel.setHardcore(it) }
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                ManagementToggle(
+                    title = "Permitir Voo",
+                    desc = "Habilita voar no modo sobrevivência",
+                    checked = allowFlight,
+                    onCheckedChange = { viewModel.setAllowFlight(it) }
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                ManagementToggle(
+                    title = "Gerar Animais",
+                    desc = "Spawn de animais pacíficos",
+                    checked = spawnAnimals,
+                    onCheckedChange = { viewModel.setSpawnAnimals(it) }
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                ManagementToggle(
+                    title = "Gerar NPCs",
+                    desc = "Spawn de aldeões e monstros",
+                    checked = spawnNpcs,
+                    onCheckedChange = { viewModel.setSpawnNpcs(it) }
                 )
             }
 

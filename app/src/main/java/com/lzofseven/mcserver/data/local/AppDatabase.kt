@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 import com.lzofseven.mcserver.data.local.dao.ServerDao
 import com.lzofseven.mcserver.data.local.entity.MCServerEntity
 
-@Database(entities = [MCServerEntity::class], version = 2, exportSchema = false)
+@Database(entities = [MCServerEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun serverDao(): ServerDao
 }

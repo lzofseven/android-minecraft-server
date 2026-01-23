@@ -48,10 +48,14 @@ class JavaVersionManager @Inject constructor(
         val javaBin = getJavaExecutable(version)
         val installDir = javaBin.parentFile.parentFile
         val libz = File(installDir, "lib/libz.so.1")
+        val libjvm = File(installDir, "lib/server/libjvm.so")
+        
         // Termux java binaries are small launchers (~6KB), so we can't check for >1MB.
         // Also check libz.so.1 to ensure symlink-related corruption is addressed.
+        // CRITICAL: Check for libjvm.so (Exit Code 4 cause)
         return javaBin.exists() && javaBin.canExecute() && javaBin.length() > 0 && 
-               (!libz.exists() || libz.length() > 0) // if exists, must not be 0 bytes
+               (!libz.exists() || libz.length() > 0) &&
+               libjvm.exists()
     }
 
     fun installJava(version: Int): Flow<DownloadStatus> = flow {
@@ -78,8 +82,12 @@ class JavaVersionManager @Inject constructor(
             extractAssetLib("libandroid-shmem_0.7_aarch64.deb", installDir)
             extractAssetLib("libandroid-spawn_0.3_aarch64.deb", installDir)
 
-            // 2. Extract JDK from Assets (only Java 17 available)
-            val jdkAssetName = "openjdk-17_17.0.17-1_aarch64.deb"
+            // 2. Extract JDK from Assets (Select based on version)
+            val jdkAssetName = if (targetVersion == 21) {
+                "openjdk-21_21.0.10_aarch64.deb"
+            } else {
+                "openjdk-17_17.0.17-1_aarch64.deb"
+            }
             
             val jdkDeb = File(cacheDir, "jdk-$targetVersion.deb")
             emit(DownloadStatus.Progress(10)) 

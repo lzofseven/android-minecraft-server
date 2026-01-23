@@ -38,7 +38,7 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun providePlayerManager(serverDir: File): PlayerManager {
-        return PlayerManager(serverDir)
+    fun providePlayerManager(@ApplicationContext context: Context): PlayerManager {
+        return PlayerManager(context)
     }
 }

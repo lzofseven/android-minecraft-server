@@ -41,6 +41,7 @@ fun ModsScreen(
     val selectedTab by viewModel.selectedTab.collectAsState()
     val currentPath by viewModel.currentBrowserPath.collectAsState()
     val browserFiles by viewModel.browserFiles.collectAsState()
+    val currentBrowserName by viewModel.currentBrowserName.collectAsState()
     val toastMessage by viewModel.toastMessage.collectAsState("")
     
     val snackbarHostState = remember { SnackbarHostState() }
@@ -48,7 +49,7 @@ fun ModsScreen(
     
     var searchQuery by remember { mutableStateOf("") }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
-    var editingFile by remember { mutableStateOf<File?>(null) }
+    var editingFile by remember { mutableStateOf<BrowserItem?>(null) }
     var fileContent by remember { mutableStateOf("") }
 
     LaunchedEffect(toastMessage) {
@@ -159,7 +160,7 @@ fun ModsScreen(
                         ) {
                             Box(contentAlignment = Alignment.CenterStart, modifier = Modifier.padding(horizontal = 12.dp)) {
                                 Text(
-                                    text = currentPath?.absolutePath?.substringAfter(viewModel.serverId) ?: "/",
+                                    text = currentBrowserName ?: "/",
                                     color = Color.White.copy(0.5f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -203,17 +204,17 @@ fun ModsScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        items(browserFiles) { file ->
+                        items(browserFiles) { item ->
                             FileItem(
-                                file = file,
+                                item = item,
                                 onNavigate = { viewModel.navigateTo(it) },
                                 onDelete = { viewModel.deleteFile(it) },
                                 onCopy = { viewModel.copyFile(it) },
                                 onEdit = {
-                                    editingFile = file
-                                    fileContent = viewModel.readFile(file)
+                                    editingFile = item
+                                    fileContent = viewModel.readFile(item)
                                 },
-                                onRename = { name -> viewModel.renameFile(file, name) }
+                                onRename = { name -> viewModel.renameFile(item, name) }
                             )
                         }
                     }
@@ -249,29 +250,87 @@ fun ModsScreen(
     }
 
     if (editingFile != null) {
-        AlertDialog(
-            onDismissRequest = { editingFile = null },
-            title = { Text(editingFile?.name ?: "Editar", color = Color.White) },
-            text = {
-                OutlinedTextField(
-                    value = fileContent,
-                    onValueChange = { fileContent = it },
-                    modifier = Modifier.fillMaxWidth().height(400.dp),
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
-                )
+        TextEditor(
+            item = editingFile!!,
+            content = fileContent,
+            onContentChange = { fileContent = it },
+            onSave = {
+                viewModel.saveFile(editingFile!!, fileContent)
+                editingFile = null
             },
-            confirmButton = {
-                Button(onClick = {
-                    editingFile?.let { viewModel.saveFile(it, fileContent) }
-                    editingFile = null
-                }) { Text("Salvar") }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingFile = null }) { Text("Sair") }
-            },
-            containerColor = SurfaceDark
+            onClose = { editingFile = null }
         )
+    }
+}
+
+@Composable
+fun TextEditor(
+    item: BrowserItem,
+    content: String,
+    onContentChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onClose: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BackgroundDark)
+            .statusBarsPadding()
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Default.Close, "Fechar", tint = Color.White)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                
+                Button(
+                    onClick = onSave,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryDark),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Save, null, tint = BackgroundDark, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("SALVAR", color = BackgroundDark, fontWeight = FontWeight.Black)
+                }
+            }
+            
+            Divider(color = Color.White.copy(0.05f))
+            
+            TextField(
+                value = content,
+                onValueChange = onContentChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontSize = 14.sp
+                ),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                )
+            )
+        }
     }
 }
 
@@ -325,7 +384,7 @@ fun ContentCard(item: InstalledContent, onToggle: (InstalledContent) -> Unit, on
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(item.name, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Versão ${item.version} • Por ${item.author}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.4f))
+                Text("Versão ${item.version}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.4f))
             }
             
             CustomSwitch(
@@ -342,49 +401,49 @@ fun ContentCard(item: InstalledContent, onToggle: (InstalledContent) -> Unit, on
 
 @Composable
 fun FileItem(
-    file: File, 
-    onNavigate: (File) -> Unit, 
-    onDelete: (File) -> Unit, 
-    onCopy: (File) -> Unit, 
-    onEdit: (File) -> Unit,
+    item: BrowserItem, 
+    onNavigate: (BrowserItem) -> Unit, 
+    onDelete: (BrowserItem) -> Unit, 
+    onCopy: (BrowserItem) -> Unit, 
+    onEdit: (BrowserItem) -> Unit,
     onRename: (String) -> Unit
 ) {
-    val isEditable = file.extension in listOf("txt", "yml", "properties", "json", "conf", "sh", "bat", "py", "js")
+    val isEditable = item.extension.lowercase() == "txt"
     var showRenameDialog by remember { mutableStateOf(false) }
 
     Surface(
-        onClick = { if (file.isDirectory) onNavigate(file) else if (isEditable) onEdit(file) },
+        onClick = { if (item.isDirectory) onNavigate(item) else if (isEditable) onEdit(item) },
         color = Color.Transparent,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                if (file.isDirectory) Icons.Default.Folder else Icons.Default.Description,
+                if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description,
                 null,
-                tint = if (file.isDirectory) Color(0xFFFFCC80) else Color.White.copy(0.4f),
+                tint = if (item.isDirectory) Color(0xFFFFCC80) else Color.White.copy(0.4f),
                 modifier = Modifier.size(24.dp)
             )
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(file.name, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (file.isFile) {
-                    Text("${file.length() / 1024} KB", color = Color.White.copy(0.3f), style = MaterialTheme.typography.labelSmall)
+                Text(item.name, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (!item.isDirectory) {
+                    Text("${item.size / 1024} KB", color = Color.White.copy(0.3f), style = MaterialTheme.typography.labelSmall)
                 }
             }
             
             Row {
-                if (file.isFile && isEditable) {
-                    IconButton(onClick = { onEdit(file) }) {
+                if (!item.isDirectory && isEditable) {
+                    IconButton(onClick = { onEdit(item) }) {
                         Icon(Icons.Default.Edit, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(18.dp))
                     }
                 }
                 IconButton(onClick = { showRenameDialog = true }) {
                     Icon(Icons.Default.DriveFileRenameOutline, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = { onCopy(file) }) {
+                IconButton(onClick = { onCopy(item) }) {
                     Icon(Icons.Default.ContentCopy, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = { onDelete(file) }) {
+                IconButton(onClick = { onDelete(item) }) {
                     Icon(Icons.Default.Delete, null, tint = Color.Red.copy(0.4f), modifier = Modifier.size(18.dp))
                 }
             }
@@ -392,7 +451,7 @@ fun FileItem(
     }
 
     if (showRenameDialog) {
-        var name by remember { mutableStateOf(file.name) }
+        var name by remember { mutableStateOf(item.name) }
         AlertDialog(
             onDismissRequest = { showRenameDialog = false },
             title = { Text("Renomear", color = Color.White) },

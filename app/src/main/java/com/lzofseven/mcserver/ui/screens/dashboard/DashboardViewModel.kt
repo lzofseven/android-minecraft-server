@@ -41,6 +41,7 @@ class DashboardViewModel @Inject constructor(
     private val installer: ServerInstaller,
     private val workManager: WorkManager,
     private val javaVersionManager: JavaVersionManager,
+    private val globalSettingsManager: com.lzofseven.mcserver.util.GlobalSettingsManager,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -72,6 +73,18 @@ class DashboardViewModel @Inject constructor(
 
     private val _showRamDialog = MutableStateFlow(false)
     val showRamDialog: StateFlow<Boolean> = _showRamDialog.asStateFlow()
+    
+    private val _ramInfo = MutableStateFlow<com.lzofseven.mcserver.util.SystemInfoUtils.RamInfo?>(null)
+    val ramInfo: StateFlow<com.lzofseven.mcserver.util.SystemInfoUtils.RamInfo?> = _ramInfo.asStateFlow()
+    
+    private val _serverIconPath = MutableStateFlow<String?>(null)
+    val serverIconPath: StateFlow<String?> = _serverIconPath.asStateFlow()
+    
+    val notificationsEnabled = globalSettingsManager.notificationsEnabled
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        globalSettingsManager.setNotificationsEnabled(enabled)
+    }
     
     fun openRamDialog() { _showRamDialog.value = true }
     fun closeRamDialog() { _showRamDialog.value = false }
@@ -115,6 +128,11 @@ class DashboardViewModel @Inject constructor(
 
     init {
         loadServer()
+        updateRamInfo()
+    }
+
+    private fun updateRamInfo() {
+        _ramInfo.value = com.lzofseven.mcserver.util.SystemInfoUtils.getRamInfo(context)
     }
 
     private fun loadServer() {
@@ -134,9 +152,42 @@ class DashboardViewModel @Inject constructor(
     private fun initializeManagers(server: MCServerEntity) {
         propertiesManager = ServerPropertiesManager(context, server.uri ?: server.path)
         
+        refreshIcon(server)
+
         loadProperties()
         checkEula()
         checkServerPersistence(server)
+    }
+
+    fun refreshIcon(server: MCServerEntity? = _serverEntity.value) {
+        server ?: return
+        viewModelScope.launch {
+            val executionDir = File(context.filesDir, "server_execution_${server.id}")
+            val execIcon = File(executionDir, "server-icon.png")
+            
+            // Priority 1: Active Execution Directory (most recent)
+            if (execIcon.exists()) {
+                _serverIconPath.value = execIcon.absolutePath
+                // Force a recomposition hack if needed by toggling a hidden state or just relying on flow
+                return@launch
+            }
+            
+            // Priority 2: Source Directory
+            val path = server.uri ?: server.path
+            if (path.startsWith("content://")) {
+                val uri = android.net.Uri.parse(path)
+                val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                val iconDoc = rootDoc?.findFile("server-icon.png")
+                _serverIconPath.value = iconDoc?.uri?.toString()
+            } else {
+                val iconFile = File(server.path, "server-icon.png")
+                if (iconFile.exists()) {
+                    _serverIconPath.value = iconFile.absolutePath
+                } else {
+                    _serverIconPath.value = null
+                }
+            }
+        }
     }
 
     private fun checkServerPersistence(server: MCServerEntity) {
@@ -214,6 +265,26 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             propertiesManager?.save(mapOf(key to value))
             loadProperties()
+        }
+    }
+
+    val isWhitelistEnabled: StateFlow<Boolean> = _properties.map {
+        it["white-list"]?.toBoolean() ?: false
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun toggleWhitelist(enabled: Boolean) {
+        viewModelScope.launch {
+            // 1. Send Command (Runtime)
+            val cmd = if (enabled) "whitelist on" else "whitelist off"
+            serverManager.sendCommand(serverId, cmd)
+            
+            // 2. Update Persisted Property
+            propertiesManager?.save(mapOf("white-list" to enabled.toString()))
+            
+            // 3. Refresh Local State
+            loadProperties()
+            
+            log("Whitelist set to $enabled")
         }
     }
 
@@ -342,12 +413,15 @@ class DashboardViewModel @Inject constructor(
         _serverStatus.value = ServerStatus.RUNNING
         
         // Single notification when server is actually online
-        notificationHelper.showNotification(
-            NotificationHelper.CHANNEL_STATUS,
-            100,
-            "Servidor Online",
-            "${server.name} iniciado com ${server.ramAllocationMB}MB RAM."
-        )
+        val notifyStatus = propertiesManager?.load()?.get("notifyStatus")?.toBoolean() ?: true
+        if (notifyStatus) {
+            notificationHelper.showNotification(
+                NotificationHelper.CHANNEL_STATUS,
+                100,
+                "Servidor Online",
+                "${server.name} iniciado com ${server.ramAllocationMB}MB RAM."
+            )
+        }
     }
     
     private suspend fun stopServer() {
@@ -355,12 +429,15 @@ class DashboardViewModel @Inject constructor(
         serverManager.stopServer(serverId)
         _serverStatus.value = ServerStatus.STOPPED
         
-        notificationHelper.showNotification(
-            NotificationHelper.CHANNEL_STATUS,
-            101,
-            "Servidor Parado",
-            "Comando de parada enviado."
-        )
+        val notifyStatus = propertiesManager?.load()?.get("notifyStatus")?.toBoolean() ?: true
+        if (notifyStatus) {
+            notificationHelper.showNotification(
+                NotificationHelper.CHANNEL_STATUS,
+                101,
+                "Servidor Parado",
+                "Comando de parada enviado."
+            )
+        }
     }
 
     private suspend fun downloadServerJarIfNeeded(server: MCServerEntity): Boolean {

@@ -14,6 +14,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -48,6 +49,8 @@ fun DashboardScreen(
     val statsHistory by viewModel.statsHistory.collectAsState()
     val consoleLogs by viewModel.consoleLogs.collectAsState(initial = emptyList<String>())
     val showPermissionDialog by viewModel.showPermissionDialog.collectAsState()
+    val showRamDialog by viewModel.showRamDialog.collectAsState()
+    val ramInfo by viewModel.ramInfo.collectAsState()
     
     val context = androidx.compose.ui.platform.LocalContext.current
     val folderPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -78,6 +81,18 @@ fun DashboardScreen(
         )
     }
 
+    if (showRamDialog && ramInfo != null) {
+        RamInfoModal(
+            ramInfo = ramInfo!!,
+            allocatedMB = serverEntity?.ramAllocationMB ?: 0,
+            onDismiss = { viewModel.closeRamDialog() },
+            onAdjustClick = { 
+                viewModel.closeRamDialog()
+                navController.navigate(Screen.Config.createRoute(serverEntity!!.id))
+            }
+        )
+    }
+
     // Auto-navigation to Console
     LaunchedEffect(Unit) {
         viewModel.navigateToConsole.collect {
@@ -99,7 +114,13 @@ fun DashboardScreen(
                 ) {
                     // Header
                     item {
-                        DashboardHeader(serverEntity!!, onlinePlayers)
+                        val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
+                        DashboardHeader(
+                            server = serverEntity!!, 
+                            onlinePlayers = onlinePlayers, 
+                            notificationsEnabled = notificationsEnabled,
+                            onToggleNotifications = { viewModel.setNotificationsEnabled(it) }
+                        )
                     }
 
                     // Installation Progress
@@ -116,7 +137,8 @@ fun DashboardScreen(
                             serverStatus = serverStatus,
                             onToggle = { viewModel.toggleServer() },
                             serverName = serverEntity?.name ?: "Server",
-                            motd = motd
+                            motd = motd,
+                            serverIconPath = viewModel.serverIconPath.collectAsState().value
                         )
                     }
 
@@ -143,7 +165,7 @@ fun DashboardScreen(
                             statsHistory = statsHistory,
                             serverStatus = serverStatus,
                             ramLimitGb = (serverEntity?.ramAllocationMB ?: 2048) / 1024.0,
-                            onRamClick = { navController.navigate(Screen.Config.createRoute(serverEntity!!.id)) }
+                            onRamClick = { viewModel.openRamDialog() }
                         )
                     }
 
@@ -179,7 +201,12 @@ fun DashboardScreen(
 }
 
 @Composable
-fun DashboardHeader(server: MCServerEntity, onlinePlayers: List<String>) {
+fun DashboardHeader(
+    server: MCServerEntity, 
+    onlinePlayers: List<String>,
+    notificationsEnabled: Boolean,
+    onToggleNotifications: (Boolean) -> Unit
+) {
     // Determine status (user is online if list is not empty for now, or check specific name if provided)
     // For MVP, if ANY player is online, we show status green, or we can bind to specific user.
     // User requested: "Green only if I am on server". Assuming user is "Steve" or similar for now, 
@@ -219,10 +246,9 @@ fun DashboardHeader(server: MCServerEntity, onlinePlayers: List<String>) {
         }
         
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            var notificationsEnabled by remember { mutableStateOf(true) }
             HeaderButton(
                 icon = if (notificationsEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
-                onClick = { notificationsEnabled = !notificationsEnabled }
+                onClick = { onToggleNotifications(!notificationsEnabled) }
             )
         }
     }
@@ -246,7 +272,7 @@ fun HeaderButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick:
 }
 
 @Composable
-fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName: String, motd: String) {
+fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName: String, motd: String, serverIconPath: String?) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(24.dp)),
         colors = CardDefaults.cardColors(containerColor = SurfaceDark),
@@ -255,7 +281,7 @@ fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName:
         Column {
             Box(modifier = Modifier.fillMaxWidth().aspectRatio(1.77f)) {
                 AsyncImage(
-                    model = "https://lh3.googleusercontent.com/aida-public/AB6AXuCwfrVy1tVAb2P64nfILPuylYzDWefOwHF251qSRzEp0xrLw1zRuRyS1TwbUVGstZ7Hd1h2lbIWTmme9atM1kDq7MA2HuNRk_yVkIXPkN8VK6On77IKdxXB2_HoP2CAXvSMbAAMV_Q_ixgnlis_A-slL40GFyzmbuW1fEzujtubzwlNfDK6OeB8ZUzFj6yTwMyXVU2ii1r9OgmjVTSm1WxffLOFkgNmowvuLCfRgynW10vEv7kq7F42ttsHnsnXYjJtlLUCJYlNBi_p",
+                    model = serverIconPath ?: "https://lh3.googleusercontent.com/aida-public/AB6AXuCwfrVy1tVAb2P64nfILPuylYzDWefOwHF251qSRzEp0xrLw1zRuRyS1TwbUVGstZ7Hd1h2lbIWTmme9atM1kDq7MA2HuNRk_yVkIXPkN8VK6On77IKdxXB2_HoP2CAXvSMbAAMV_Q_ixgnlis_A-slL40GFyzmbuW1fEzujtubzwlNfDK6OeB8ZUzFj6yTwMyXVU2ii1r9OgmjVTSm1WxffLOFkgNmowvuLCfRgynW10vEv7kq7F42ttsHnsnXYjJtlLUCJYlNBi_p",
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -555,8 +581,18 @@ fun MiniConsoleSection(
                     }
                 } else {
                     logs.takeLast(3).forEach { logLine ->
-                        val time = if (logLine.startsWith("[")) logLine.substringBefore("]") + "]" else ""
-                        val msg = if (logLine.startsWith("[")) logLine.substringAfter("] ") else logLine
+                        val timeRegex = Regex("^\\[?(\\d{2}:\\d{2}:\\d{2})\\]?")
+                        val timeMatch = timeRegex.find(logLine)
+                        
+                        val time = timeMatch?.value ?: ""
+                        var msg = if (time.isNotEmpty()) logLine.substringAfter(time).trim() else logLine
+                        
+                        // Clean any residual brackets or double timestamps
+                        if (msg.startsWith("] ")) msg = msg.substring(2)
+                        if (timeRegex.containsMatchIn(msg)) {
+                             msg = msg.replace(timeRegex, "").trim()
+                        }
+                        
                         ConsoleLogLine(time, msg)
                     }
                 }
@@ -630,10 +666,21 @@ fun HeartbeatGraph(color: Color, usage: Double, modifier: Modifier) {
 }
 
 @Composable
-fun QuickToolsSection(navController: NavController, serverId: String) {
+fun QuickToolsSection(navController: NavController, serverId: String, viewModel: DashboardViewModel = hiltViewModel()) {
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         Text("FERRAMENTAS DE GESTÃO", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f), fontWeight = FontWeight.Black, letterSpacing = 2.sp)
         Spacer(Modifier.height(16.dp))
+        
+        // Whitelist Quick Toggle
+        val isWhitelistEnabled by viewModel.isWhitelistEnabled.collectAsState()
+        
+        WhitelistQuickToggle(
+            isEnabled = isWhitelistEnabled,
+            onToggle = { viewModel.toggleWhitelist(it) },
+            onManageClick = { navController.navigate(Screen.Players.createRoute(serverId)) }
+        )
+        
+        Spacer(Modifier.height(12.dp))
         
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ToolButton(
@@ -656,6 +703,47 @@ fun QuickToolsSection(navController: NavController, serverId: String) {
                 icon = Icons.Default.Extension,
                 color = PrimaryDark,
                 onClick = { navController.navigate(Screen.Library.createRoute(serverId)) }
+            )
+        }
+    }
+}
+
+@Composable
+fun WhitelistQuickToggle(isEnabled: Boolean, onToggle: (Boolean) -> Unit, onManageClick: () -> Unit) {
+    Surface(
+        color = Color.White.copy(alpha = 0.04f),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f).clickable { onManageClick() }) {
+                Surface(color = if(isEnabled) PrimaryDark.copy(0.2f) else Color.White.copy(0.1f), shape = CircleShape, modifier = Modifier.size(36.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.List, null, tint = if(isEnabled) PrimaryDark else Color.White.copy(0.4f), modifier = Modifier.size(18.dp))
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text("Whitelist", fontWeight = FontWeight.Bold, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                    Text(if(isEnabled) "Ativado" else "Desativado", style = MaterialTheme.typography.labelSmall, color = if(isEnabled) PrimaryDark else Color.White.copy(0.4f))
+                }
+            }
+            
+            Switch(
+                checked = isEnabled,
+                onCheckedChange = onToggle,
+                modifier = Modifier.scale(0.8f),
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = BackgroundDark,
+                    checkedTrackColor = PrimaryDark,
+                    uncheckedThumbColor = Color.White.copy(0.6f),
+                    uncheckedTrackColor = Color.Black.copy(0.2f)
+                )
             )
         }
     }
@@ -748,17 +836,127 @@ fun BottomNavItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: 
         Icon(
             icon,
             contentDescription = null,
-            tint = if(selected) PrimaryDark else Color.White.copy(alpha = 0.4f),
-            modifier = Modifier.size(if(selected) 24.dp else 22.dp)
+            tint = if (selected) PrimaryDark else Color.White.copy(alpha = 0.4f),
+            modifier = Modifier.size(24.dp)
         )
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Black,
-            color = if(selected) PrimaryDark else Color.White.copy(alpha = 0.4f),
-            fontSize = 8.sp,
-            letterSpacing = 0.sp
-        )
+        if (label.isNotEmpty()) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) PrimaryDark else Color.White.copy(alpha = 0.4f),
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RamInfoModal(
+    ramInfo: com.lzofseven.mcserver.util.SystemInfoUtils.RamInfo,
+    allocatedMB: Int,
+    onDismiss: () -> Unit,
+    onAdjustClick: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(24.dp)
+            .clip(RoundedCornerShape(28.dp)),
+    ) {
+        Surface(
+            color = SurfaceDark,
+            tonalElevation = 8.dp,
+            shape = RoundedCornerShape(28.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(PrimaryDark.copy(alpha = 0.1f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Storage, null, tint = PrimaryDark, modifier = Modifier.size(32.dp))
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                
+                Text(
+                    "Informações de Memória",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White
+                )
+                
+                Spacer(Modifier.height(8.dp))
+                
+                Text(
+                    "Estatísticas em tempo real do dispositivo",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+                
+                Spacer(Modifier.height(24.dp))
+                
+                // Stats Grid
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    RamStatRow("RAM Total", "${String.format("%.1f", ramInfo.totalRamGB)} GB", Icons.Default.SdStorage)
+                    RamStatRow("RAM Disponível", "${String.format("%.1f", ramInfo.availableRamGB)} GB", Icons.Default.CheckCircle)
+                    RamStatRow("RAM em Uso (Sistema)", "${String.format("%.1f", ramInfo.usedRamGB)} GB", Icons.Default.PieChart)
+                    RamStatRow("Alocado para o Servidor", "${allocatedMB} MB", Icons.Default.SettingsSuggest)
+                    RamStatRow("Uso do Gerenciador", "${ramInfo.appUsedRamMB} MB", Icons.Default.BugReport)
+                }
+                
+                Spacer(Modifier.height(32.dp))
+                
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                    ) {
+                        Text("FECHAR")
+                    }
+                    
+                    Button(
+                        onClick = onAdjustClick,
+                        modifier = Modifier.weight(1.5f).height(52.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryDark)
+                    ) {
+                        Text("AJUSTAR ALOCAÇÃO", fontWeight = FontWeight.Bold, color = BackgroundDark)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RamStatRow(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(0.03f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = PrimaryDark.copy(0.6f), modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(label, color = Color.White.copy(0.7f), style = MaterialTheme.typography.bodyMedium)
+        }
+        Text(value, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

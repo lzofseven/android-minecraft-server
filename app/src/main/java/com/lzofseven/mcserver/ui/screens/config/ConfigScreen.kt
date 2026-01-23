@@ -40,6 +40,8 @@ fun ConfigScreen(
     val forceMaxFrequency by viewModel.forceMaxFrequency.collectAsState()
     val worldPath by viewModel.worldPath.collectAsState()
     
+    var showRestartModal by remember { mutableStateOf(false) }
+
     val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(key1 = true) {
         viewModel.uiEvent.collect { event: UiEvent ->
@@ -48,6 +50,12 @@ fun ConfigScreen(
                      android.widget.Toast.makeText(context, event.message, android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
+        }
+    }
+    
+    LaunchedEffect(key1 = true) {
+        viewModel.restartRequiredEvent.collect { 
+            showRestartModal = true
         }
     }
 
@@ -80,33 +88,73 @@ fun ConfigScreen(
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 // Server Engine Section
-                ConfigSection(title = "MOTOR DO SERVIDOR", icon = Icons.Default.Settings) {
-                    androidx.compose.foundation.layout.FlowRow(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        maxItemsInEachRow = 3
+                ConfigSection(
+                    title = "MOTOR DO SERVIDOR", 
+                    icon = Icons.Default.Settings,
+                    subtitle = "Reinício necessário"
+                ) {
+                    var expanded by remember { mutableStateOf(false) }
+                    
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { expanded = !expanded },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        ServerType.values().forEach { type ->
-                            Surface(
-                                onClick = { viewModel.selectServerType(type) },
-                                color = if (serverType == type) PrimaryDark else Color.White.copy(alpha = 0.05f),
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, if (serverType == type) PrimaryDark else Color.White.copy(alpha = 0.1f)),
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .widthIn(min = 100.dp)
-                                    .height(48.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        type.displayName,
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 11.sp,
-                                        color = if (serverType == type) BackgroundDark else Color.White.copy(alpha = 0.6f),
-                                        modifier = Modifier.padding(horizontal = 8.dp)
-                                    )
+                        OutlinedTextField(
+                            value = serverType.displayName,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                            leadingIcon = {
+                                val icon = when (serverType) {
+                                    ServerType.PAPER -> Icons.Default.Speed
+                                    ServerType.FABRIC -> Icons.Default.Layers
+                                    ServerType.VANILLA -> Icons.Default.Grass
+                                    ServerType.FORGE -> Icons.Default.Construction
+                                    ServerType.NEOFORGE -> Icons.Default.AutoAwesome
                                 }
+                                Icon(icon, null, tint = PrimaryDark)
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = PrimaryDark,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                            modifier = Modifier.exposedDropdownSize().background(SurfaceDark).border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(4.dp))
+                        ) {
+                            ServerType.values().forEach { type ->
+                                val icon = when (type) {
+                                    ServerType.PAPER -> Icons.Default.Speed
+                                    ServerType.FABRIC -> Icons.Default.Layers
+                                    ServerType.VANILLA -> Icons.Default.Grass
+                                    ServerType.FORGE -> Icons.Default.Construction
+                                    ServerType.NEOFORGE -> Icons.Default.AutoAwesome
+                                }
+                                
+                                DropdownMenuItem(
+                                    text = { 
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(type.displayName, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(icon, null, tint = if(serverType == type) PrimaryDark else Color.White.copy(0.7f))
+                                    },
+                                    onClick = {
+                                        viewModel.selectServerType(type)
+                                        expanded = false
+                                    },
+                                )
                             }
                         }
                     }
@@ -115,7 +163,11 @@ fun ConfigScreen(
                 /* Versão removida para evitar conflito lógico com a criação */
 
                 // Resource Allocation Section
-                ConfigSection(title = "ALOCAÇÃO DE RECURSOS", icon = Icons.Default.Memory) {
+                ConfigSection(
+                    title = "ALOCAÇÃO DE RECURSOS", 
+                    icon = Icons.Default.Memory,
+                    subtitle = "Reinício necessário"
+                ) {
                     Surface(
                         color = Color.White.copy(alpha = 0.03f),
                         shape = RoundedCornerShape(24.dp),
@@ -132,15 +184,87 @@ fun ConfigScreen(
                                 onValueChange = { viewModel.setRamAllocation((512 + it * (4096 - 512)).toInt()) }
                             )
                             
+                            val ramInfo by viewModel.ramInfo.collectAsState()
+                            ramInfo?.let { 
+                                Text(
+                                    text = "Disp: ${String.format("%.1f", it.availableRamGB)}GB / Total: ${String.format("%.1f", it.totalRamGB)}GB",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(0.4f),
+                                    modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                                )
+                            }
+                            
                             Spacer(Modifier.height(24.dp))
                             
                             // CPU
+                            val maxCores = Runtime.getRuntime().availableProcessors()
                             ResourceSlider(
                                 label = "Núcleos de CPU",
                                 value = "$cpuCores Cores",
                                 icon = Icons.Default.Memory,
-                                progress = (cpuCores - 1f) / (Runtime.getRuntime().availableProcessors() - 1f),
-                                onValueChange = { viewModel.setCpuCores((1 + it * (Runtime.getRuntime().availableProcessors() - 1)).toInt()) }
+                                progress = (cpuCores - 1f) / (maxCores - 1f).coerceAtLeast(1f),
+                                onValueChange = { 
+                                    val newCores = (1 + it * (maxCores - 1)).toInt().coerceIn(1, maxCores)
+                                    viewModel.setCpuCores(newCores) 
+                                }
+                            )
+
+                            Spacer(Modifier.height(24.dp))
+
+                            // Java Version
+                            val javaVersion by viewModel.javaVersion.collectAsState()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Terminal, null, tint = PrimaryDark, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Versão do Java", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                                }
+                                
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    FilterChip(
+                                        selected = javaVersion == 17,
+                                        onClick = { viewModel.setJavaVersion(17) },
+                                        label = { Text("Java 17") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = PrimaryDark,
+                                            selectedLabelColor = BackgroundDark,
+                                            labelColor = Color.White.copy(0.6f)
+                                        ),
+                                        border = FilterChipDefaults.filterChipBorder(
+                                            enabled = true,
+                                            selected = javaVersion == 17,
+                                            borderColor = Color.White.copy(0.1f),
+                                            selectedBorderColor = PrimaryDark
+                                        )
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    FilterChip(
+                                        selected = javaVersion == 21,
+                                        onClick = { viewModel.setJavaVersion(21) },
+                                        label = { Text("Java 21") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = PrimaryDark,
+                                            selectedLabelColor = BackgroundDark,
+                                            labelColor = Color.White.copy(0.6f)
+                                        ),
+                                        border = FilterChipDefaults.filterChipBorder(
+                                            enabled = true,
+                                            selected = javaVersion == 21,
+                                            borderColor = Color.White.copy(0.1f),
+                                            selectedBorderColor = PrimaryDark
+                                        )
+                                    )
+                                }
+                            }
+                            Text(
+                                "Nota: Java 21 é recomendado para plugins modernos (1.20.1+).",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(0.4f),
+                                modifier = Modifier.padding(top = 4.dp, start = 4.dp)
                             )
                         }
                     }
@@ -177,10 +301,22 @@ fun ConfigScreen(
                              viewModel.setWorldPath(it.toString())
                         }
                     }
+                    
+                    val displayPath = remember(worldPath) {
+                        try {
+                            if (worldPath.startsWith("content://")) {
+                                val uri = android.net.Uri.parse(worldPath)
+                                val lastSegment = uri.lastPathSegment ?: "Unknown"
+                                lastSegment.replace(":", " > ").replace("primary", "Armazenamento Interno") // Simple cleanup
+                            } else {
+                                worldPath
+                            }
+                        } catch(e: Exception) { worldPath }
+                    }
 
                     OutlinedTextField(
-                        value = worldPath,
-                        onValueChange = { viewModel.setWorldPath(it) },
+                        value = displayPath,
+                        onValueChange = { },
                         label = { Text("Caminho do Mundo", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
@@ -200,7 +336,7 @@ fun ConfigScreen(
                 }
 
                 // Notificações Section
-                ConfigSection(title = "NOTIFICAÇÕES PUSH SOCIAIS", icon = Icons.Default.Notifications) {
+                ConfigSection(title = "NOTIFICAÇÕES", icon = Icons.Default.Notifications) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         val notifyStatus by viewModel.notifyStatus.collectAsState()
                         val notifyPlayers by viewModel.notifyPlayers.collectAsState()
@@ -289,24 +425,72 @@ fun ConfigScreen(
                 Spacer(Modifier.height(48.dp))
             }
         }
+
+        if (showRestartModal) {
+            AlertDialog(
+                onDismissRequest = { showRestartModal = false },
+                containerColor = SurfaceDark,
+                titleContentColor = Color.White,
+                textContentColor = Color.White.copy(alpha = 0.7f),
+                title = { Text("Reinício Necessário", fontWeight = FontWeight.Bold) },
+                text = { Text("As alterações no motor ou hardware exigem que o servidor seja reiniciado para entrar em vigor. Reiniciar agora?") },
+                confirmButton = {
+                    Button(
+                        onClick = { 
+                            showRestartModal = false 
+                            // TODO: Trigger actual server restart if reachable
+                            android.widget.Toast.makeText(context, "O servidor será reiniciado na próxima inicialização.", android.widget.Toast.LENGTH_LONG).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryDark)
+                    ) {
+                        Text("Reiniciar Agora", color = BackgroundDark, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRestartModal = false }) {
+                        Text("Depois", color = Color.White)
+                    }
+                }
+            )
+        }
     }
 }
 
 @Composable
-fun ConfigSection(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, content: @Composable () -> Unit) {
+fun ConfigSection(
+    title: String, 
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null, 
+    subtitle: String? = null,
+    content: @Composable () -> Unit
+) {
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp)) {
-            if (icon != null) {
-                Icon(icon, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically, 
+            modifier = Modifier.padding(start = 4.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                if (icon != null) {
+                    Icon(icon, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 2.sp
+                )
             }
-            Text(
-                title,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.4f),
-                fontWeight = FontWeight.Black,
-                letterSpacing = 2.sp
-            )
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = PrimaryDark.copy(alpha = 0.6f),
+                    fontWeight = FontWeight.Bold,
+                    fontStyle = FontStyle.Italic
+                )
+            }
         }
         content()
     }

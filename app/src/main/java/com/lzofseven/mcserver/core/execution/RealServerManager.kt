@@ -70,6 +70,115 @@ class RealServerManager @Inject constructor(
         }
     }
 
+    private fun getManagerConfig(serverId: String): java.util.Properties {
+        val props = java.util.Properties()
+        try {
+            val server = runBlocking { serverRepository.getServerById(serverId) } ?: return props
+            val serverPath = server.uri ?: server.path
+            
+            if (serverPath.startsWith("content://")) {
+                val uri = Uri.parse(serverPath)
+                val rootDoc = DocumentFile.fromTreeUri(context, uri)
+                val configFile = rootDoc?.findFile("manager_config.properties")
+                if (configFile != null) {
+                    context.contentResolver.openInputStream(configFile.uri)?.use { props.load(it) }
+                }
+            } else {
+                val configFile = File(serverPath, "manager_config.properties")
+                if (configFile.exists()) {
+                    configFile.inputStream().use { props.load(it) }
+                }
+            }
+        } catch (e: Exception) { e.printStackTrace() }
+        return props
+    }
+
+    private fun copyDirectorySAF(source: DocumentFile, dest: File) {
+        if (!dest.exists()) dest.mkdirs()
+        source.listFiles().forEach { file ->
+            val destFile = File(dest, file.name!!)
+            if (file.isDirectory) {
+                copyDirectorySAF(file, destFile)
+            } else {
+                context.contentResolver.openInputStream(file.uri)?.use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun syncDirectoryToSAF(source: File, dest: DocumentFile, skipExtensions: List<String> = emptyList()) {
+        source.listFiles()?.forEach { file ->
+            if (skipExtensions.any { file.name.endsWith(it) }) return@forEach
+            
+            if (file.isDirectory) {
+                var destSubDir = dest.findFile(file.name)
+                if (destSubDir == null || !destSubDir.isDirectory) {
+                    destSubDir = dest.createDirectory(file.name)
+                }
+                if (destSubDir != null) {
+                    syncDirectoryToSAF(file, destSubDir, skipExtensions)
+                }
+            } else {
+                var destFile = dest.findFile(file.name)
+                if (destFile == null) {
+                    val mimeType = when {
+                        file.name.endsWith(".png") -> "image/png"
+                        file.name.endsWith(".txt") -> "text/plain"
+                        file.name.endsWith(".json") -> "application/json"
+                        else -> "application/octet-stream"
+                    }
+                    destFile = dest.createFile(mimeType, file.name)
+                }
+                destFile?.let {
+                    context.contentResolver.openOutputStream(it.uri, "wt")?.use { output ->
+                        file.inputStream().use { input ->
+                            input.copyTo(output)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun syncBackToSource(serverId: String) = withContext(Dispatchers.IO) {
+        val server = serverRepository.getServerById(serverId) ?: return@withContext
+        val serverPath = server.uri ?: server.path
+        val executionDir = File(context.filesDir, "server_execution_${server.id}")
+        
+        if (!executionDir.exists()) return@withContext
+        
+        Log.i("RealServerManager", "Starting Total Sync for $serverId to $serverPath")
+        val skipExt = listOf(".jar", ".phar") // Skip large binaries that don't change and are redundant
+        
+        if (serverPath.startsWith("content://")) {
+            val treeUri = Uri.parse(serverPath)
+            val docDir = DocumentFile.fromTreeUri(context, treeUri)
+            if (docDir != null && docDir.exists()) {
+                syncDirectoryToSAF(executionDir, docDir, skipExt)
+            }
+        } else {
+            val destDir = File(serverPath)
+            if (!destDir.exists()) destDir.mkdirs()
+            
+            executionDir.walkTopDown().forEach { file ->
+                if (skipExt.any { file.name.endsWith(it) }) return@forEach
+                val relativePath = file.relativeTo(executionDir).path
+                if (relativePath.isEmpty()) return@forEach // root
+                
+                val targetFile = File(destDir, relativePath)
+                if (file.isDirectory) {
+                    if (!targetFile.exists()) targetFile.mkdirs()
+                } else {
+                    file.copyTo(targetFile, overwrite = true)
+                }
+            }
+        }
+        Log.i("RealServerManager", "Total Sync completed for $serverId")
+    }
+
     private fun addPlayer(serverId: String, playerName: String) {
         val flow = _onlinePlayers.getOrPut(serverId) { MutableStateFlow(emptyList()) }
         val current = flow.value.toMutableList()
@@ -108,7 +217,8 @@ class RealServerManager @Inject constructor(
         val commandPrefix: List<String>
         
         // Java Check
-        val javaVersion = getJavaVersionForMc(server.version)
+        // NEW: Respect the user's selected Java version
+        val javaVersion = server.javaVersion 
         emitLog(server.id, "Checking Java $javaVersion...")
  
         if (!javaManager.isJavaInstalled(javaVersion)) {
@@ -258,15 +368,30 @@ class RealServerManager @Inject constructor(
             }
             
             // Read CPU Core Limit from config
-            val configFile = File(effectiveServerPath, "manager_config.properties")
-            var cpuCores = Runtime.getRuntime().availableProcessors()
-            if (configFile.exists()) {
+            var cpuCores = server.javaVersion // Default - wait, this was a typo in previous code, meant to be total processors
+            cpuCores = Runtime.getRuntime().availableProcessors()
+
+            val configProps = java.util.Properties()
+            if (serverPath.startsWith("content://")) {
                 try {
-                    val props = java.util.Properties()
-                    configFile.inputStream().use { props.load(it) }
-                    cpuCores = props.getProperty("cpuCores", cpuCores.toString()).toIntOrNull() ?: cpuCores
+                    val uri = Uri.parse(serverPath)
+                    val rootDoc = DocumentFile.fromTreeUri(context, uri)
+                    val configFileSAF = rootDoc?.findFile("manager_config.properties")
+                    if (configFileSAF != null) {
+                        context.contentResolver.openInputStream(configFileSAF.uri)?.use { configProps.load(it) }
+                    }
                 } catch (e: Exception) { e.printStackTrace() }
+            } else {
+                val configFileLocal = File(serverPath, "manager_config.properties")
+                if (configFileLocal.exists()) {
+                    try {
+                        configFileLocal.inputStream().use { configProps.load(it) }
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
             }
+            
+            val limit = configProps.getProperty("cpuCores", cpuCores.toString()).toIntOrNull() ?: cpuCores
+            cpuCores = limit
 
             // Build command with Java-version-specific flags
             // NEW: SAF Execution Strategy - "Copy-to-Run"
@@ -277,8 +402,8 @@ class RealServerManager @Inject constructor(
             
             val privateJarFile = File(executionDir, "server.jar")
             
-            // Files to copy from source to execution dir
-            val filesToCopy = listOf("server.jar", "server.properties", "eula.txt", "banned-ips.json", "banned-players.json", "ops.json", "whitelist.json")
+            // Files and DIRECTORIES to copy from source to execution dir
+            val stuffToCopy = listOf("server.jar", "server.properties", "eula.txt", "banned-ips.json", "banned-players.json", "ops.json", "whitelist.json", "usercache.json", "server-icon.png", "plugins", "mods")
 
             if (serverPath.startsWith("content://")) {
                 Log.i("RealServerManager", "SAF Mode: Copying server files to private execution directory...")
@@ -286,18 +411,22 @@ class RealServerManager @Inject constructor(
                 val docDir = DocumentFile.fromTreeUri(context, treeUri)
                 
                 if (docDir != null) {
-                    filesToCopy.forEach { fileName ->
-                        val sourceFile = docDir.findFile(fileName)
-                        if (sourceFile != null && sourceFile.exists()) {
+                    stuffToCopy.forEach { name ->
+                        val source = docDir.findFile(name)
+                        if (source != null && source.exists()) {
                             try {
-                                val destFile = File(executionDir, fileName)
-                                context.contentResolver.openInputStream(sourceFile.uri)?.use { input ->
-                                    destFile.outputStream().use { output ->
-                                        input.copyTo(output)
+                                val destFile = File(executionDir, name)
+                                if (source.isDirectory) {
+                                    copyDirectorySAF(source, destFile)
+                                } else {
+                                    context.contentResolver.openInputStream(source.uri)?.use { input ->
+                                        destFile.outputStream().use { output ->
+                                            input.copyTo(output)
+                                        }
                                     }
                                 }
                             } catch (e: Exception) {
-                                Log.w("RealServerManager", "Failed to copy $fileName: ${e.message}")
+                                Log.w("RealServerManager", "Failed to copy $name: ${e.message}")
                             }
                         }
                     }
@@ -305,13 +434,18 @@ class RealServerManager @Inject constructor(
             } else {
                  // Direct file copy
                  val sourceDir = File(effectiveServerPath)
-                 filesToCopy.forEach { fileName ->
-                     val sourceFile = File(sourceDir, fileName)
+                 stuffToCopy.forEach { name ->
+                     val sourceFile = File(sourceDir, name)
                      if (sourceFile.exists()) {
                          try {
-                              sourceFile.copyTo(File(executionDir, fileName), overwrite = true)
+                              val destFile = File(executionDir, name)
+                              if (sourceFile.isDirectory) {
+                                  sourceFile.copyRecursively(destFile, overwrite = true)
+                              } else {
+                                  sourceFile.copyTo(destFile, overwrite = true)
+                              }
                          } catch (e: Exception) {
-                              Log.w("RealServerManager", "Failed to copy $fileName: ${e.message}")
+                              Log.w("RealServerManager", "Failed to copy $name: ${e.message}")
                          }
                      }
                  }
@@ -331,9 +465,14 @@ class RealServerManager @Inject constructor(
                 executable.absolutePath,
                 "-Xms${server.ramAllocationMB}M",
                 "-Xmx${server.ramAllocationMB}M",
+                "-XX:ActiveProcessorCount=$cpuCores", // Force core limit
                 "-Djna.tmpdir=${context.cacheDir.absolutePath}",
                 "-Djava.io.tmpdir=${context.cacheDir.absolutePath}",
-                "-Duser.dir=${executionDir.absolutePath}" // Force working dir property
+                "-Duser.dir=${executionDir.absolutePath}", // Force working dir property
+                "-Dterminal.jansi=false", 
+                "-Dlog4j.skipJansi=true",
+                "-Dorg.jline.terminal.jansi=false",
+                "-Dorg.jline.terminal.backend=jline.terminal.impl.DumbTerminalProvider"
             )
 
             // CACHED PATCHED JAR CHECK
@@ -448,7 +587,8 @@ class RealServerManager @Inject constructor(
                                 val playerName = joinMatch.groupValues[1]
                                 addPlayer(server.id, playerName)
                                 
-                                val notifyPlayers = true
+                                val config = getManagerConfig(server.id)
+                                val notifyPlayers = config.getProperty("notifyPlayers", "true").toBoolean()
                                 if (notifyPlayers) {
                                     notificationHelper.showNotification(
                                         NotificationHelper.CHANNEL_PLAYERS,
@@ -524,7 +664,7 @@ class RealServerManager @Inject constructor(
                     // AUTO-RESTART STRATEGY FOR PAPERCLIP
                     // If exit code is 1 (common for Paperclip agent failure) AND we find a patched jar,
                     // it implies patching succeeded but the old process crashed. Restart immediately with the new jar.
-                    if (exitCode == "1") {
+                    if (exitCode == "1" || exitCode == "4" || exitCode == "127") {
                         val executionDir = File(context.filesDir, "server_execution_${server.id}")
                         val cacheDir = File(executionDir, "cache")
                         val patchedJar = cacheDir.listFiles { _, name -> 
@@ -535,17 +675,29 @@ class RealServerManager @Inject constructor(
                                 Log.i("RealServerManager", "Auto-Restart: Found patched JAR ${patchedJar.name}, restarting...")
                                 emitLog(server.id, "Patch concluído! Reiniciando com JAR otimizado...")
                                 
-                                // Clean up OLD process from map so startServer doesn't bail out
-                                // But DO NOT call stopServer() yet because it cleans up too much or might race
                                 processes.remove(server.id) 
-                                
-                                startServer(server) // Recursive restart
-                                shouldStop = false // Prevent finally block from running stopServer logic on the NEW process
+                                startServer(server) 
+                                shouldStop = false 
+                        } else if (server.javaVersion == 21) {
+                            // NEW: Smart Java Fallback
+                            // If it crashed on Java 21, try falling back to Java 17
+                            Log.w("RealServerManager", "Crash on Java 21 detected (Exit Code 1). Attempting fallback to Java 17...")
+                            emitLog(server.id, "⚠️ Falha com Java 21 detectada. Tentando reiniciar com Java 17...")
+                            
+                            val updatedServer = server.copy(javaVersion = 17)
+                            serverRepository.updateServer(updatedServer) // Persist the change
+                            
+                            processes.remove(server.id)
+                            startServer(updatedServer)
+                            shouldStop = false
                         }
                     }
                     
                     if (shouldStop) {
                         emitLog(server.id, "Processo finalizado (Exit Code: $exitCode)")
+                        emitLog(server.id, "Sincronizando arquivos de volta para o armazenamento...")
+                        syncBackToSource(server.id)
+                        emitLog(server.id, "Sincronização concluída.")
                     }
                     
                 } catch (e: Exception) {
@@ -613,6 +765,7 @@ class RealServerManager @Inject constructor(
             } finally {
                 processes.remove(serverId)
                 _runningServerCount.value = processes.size
+                syncBackToSource(serverId)
             }
         }
     }
@@ -749,24 +902,29 @@ class RealServerManager @Inject constructor(
                     // Update live notification with professional stats
                     val playerCount = _onlinePlayers[serverId]?.value?.size ?: 0
                     
-                    val maxPlayers = try {
-                        val server = serverRepository.getServerById(serverId)
-                        if (server != null) {
-                            val propsFile = File(server.path, "server.properties")
-                            if (propsFile.exists()) {
-                                val props = java.util.Properties()
-                                props.load(java.io.FileInputStream(propsFile))
-                                props.getProperty("max-players", "20").toIntOrNull() ?: 20
-                            } else 20
-                        } else 20
-                    } catch (e: Exception) { 20 }
+                    val server = serverRepository.getServerById(serverId)
+                    val config = getManagerConfig(serverId)
+                    val notifyStatus = config.getProperty("notifyStatus", "true").toBoolean()
                     
-                    notificationHelper.updateLiveStats(
-                        onlinePlayers = playerCount,
-                        maxPlayers = maxPlayers,
-                        cpu = "${cpuPercent.toInt()}%",
-                        ram = "${String.format("%.1f", ramGb)}/${String.format("%.1f", ramLimitGb)}GB"
-                    )
+                    if (notifyStatus) {
+                        val maxPlayers = try {
+                            if (server != null) {
+                                val propsFile = File(server.path, "server.properties")
+                                if (propsFile.exists()) {
+                                    val props = java.util.Properties()
+                                    props.load(java.io.FileInputStream(propsFile))
+                                    props.getProperty("max-players", "20").toIntOrNull() ?: 20
+                                } else 20
+                            } else 20
+                        } catch (e: Exception) { 20 }
+                        
+                        notificationHelper.updateLiveStats(
+                            onlinePlayers = playerCount,
+                            maxPlayers = maxPlayers,
+                            cpu = "${cpuPercent.toInt()}%",
+                            ram = "${String.format("%.1f", ramGb)}/${String.format("%.1f", ramLimitGb)}GB"
+                        )
+                    }
                     
                 } catch (e: Exception) {
                     e.printStackTrace()

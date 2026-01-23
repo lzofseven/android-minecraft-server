@@ -13,7 +13,8 @@ import javax.inject.Singleton
 
 @Singleton
 class NotificationHelper @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val globalSettingsManager: com.lzofseven.mcserver.util.GlobalSettingsManager
 ) {
     private fun getAppIconInfo(): android.graphics.Bitmap {
         val drawable = androidx.core.content.ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
@@ -83,6 +84,8 @@ class NotificationHelper @Inject constructor(
     }
 
     fun showNotification(channelId: String, id: Int, title: String, message: String) {
+        if (!globalSettingsManager.isNotificationsEnabled()) return
+        
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setLargeIcon(getAppIconInfo())
@@ -122,6 +125,8 @@ class NotificationHelper @Inject constructor(
     }
 
     fun updateLiveStats(onlinePlayers: Int, maxPlayers: Int, cpu: String, ram: String) {
+        if (!globalSettingsManager.isNotificationsEnabled()) return
+        
         val message = "Jogadores: $onlinePlayers/$maxPlayers | CPU: $cpu | RAM: $ram"
         val builder = NotificationCompat.Builder(context, CHANNEL_STATUS)
             .setSmallIcon(R.mipmap.ic_launcher)

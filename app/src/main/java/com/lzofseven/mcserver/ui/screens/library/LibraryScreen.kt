@@ -145,6 +145,33 @@ fun LibraryScreen(
                     }
                 }
                 
+                // Mod Loader Filters (NEW)
+                val selectedLoader by viewModel.selectedLoader.collectAsState()
+                Text("Filtrar por Loader:", color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp))
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp)
+                ) {
+                    val loaders = listOf(null to "Todos", "bukkit" to "Bukkit/Spigot", "paper" to "Paper", "fabric" to "Fabric", "forge" to "Forge")
+                    loaders.forEach { (loader, label) ->
+                         item {
+                            FilterChip(
+                                selected = selectedLoader == loader,
+                                onClick = { viewModel.setLoaderFilter(loader) },
+                                label = { Text(label, fontWeight = FontWeight.Black, fontSize = 10.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = PrimaryDark,
+                                    selectedLabelColor = BackgroundDark,
+                                    labelColor = Color.White.copy(alpha = 0.4f),
+                                    containerColor = Color.White.copy(alpha = 0.05f)
+                                ),
+                                shape = RoundedCornerShape(24.dp)
+                            )
+                        }
+                    }
+                }
+                
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = PrimaryDark)

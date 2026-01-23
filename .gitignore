@@ -6,3 +6,4 @@ local.properties
 
 # Reference
 reference_repo/
+app/src/main/assets/runtimes/*.deb

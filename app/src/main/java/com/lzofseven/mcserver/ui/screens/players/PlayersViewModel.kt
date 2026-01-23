@@ -43,6 +43,14 @@ class PlayersViewModel @Inject constructor(
         if (query.isBlank()) players else players.filter { it.contains(query, ignoreCase = true) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val filteredOps = kotlinx.coroutines.flow.combine(_ops, _searchQuery) { opsList: List<PlayerEntry>, query: String ->
+        if (query.isBlank()) opsList else opsList.filter { it.name.contains(query, ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val filteredWhitelist = kotlinx.coroutines.flow.combine(_whitelist, _searchQuery) { whitelistList: List<WhitelistEntry>, query: String ->
+        if (query.isBlank()) whitelistList else whitelistList.filter { it.name.contains(query, ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     private val _gameMode = MutableStateFlow("Survival")
     val gameMode: StateFlow<String> = _gameMode.asStateFlow()
 
@@ -52,49 +60,62 @@ class PlayersViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            _ops.value = playerManager.getOps()
-            _whitelist.value = playerManager.getWhitelist()
+            val server = repository.getServerById(serverId) ?: return@launch
+            _ops.value = playerManager.getOps(server.path, server.uri)
+            _whitelist.value = playerManager.getWhitelist(server.path, server.uri)
             
-            val server = repository.getServerById(serverId)
-            if (server != null) {
-                val props = com.lzofseven.mcserver.util.ServerPropertiesManager(context, server.path).load()
-                _gameMode.value = props["gamemode"] ?: "Survival"
-            }
+            val props = com.lzofseven.mcserver.util.ServerPropertiesManager(context, server.uri ?: server.path).load()
+            _gameMode.value = props["gamemode"] ?: "Survival"
         }
     }
 
     fun addOp(name: String) {
         viewModelScope.launch {
+            val server = repository.getServerById(serverId) ?: return@launch
+            
+            // Priority: Send command to running server
+            realServerManager.sendCommand(serverId, "op $name")
+            
+            // Fallback: Update local file (useful if server is offline)
             val newOps = _ops.value.toMutableList().apply {
                 add(PlayerEntry(uuid = UUID.randomUUID().toString(), name = name))
             }
-            playerManager.saveOps(newOps)
+            playerManager.saveOps(server.path, server.uri, newOps)
             _ops.value = newOps
         }
     }
 
     fun removeOp(player: PlayerEntry) {
         viewModelScope.launch {
+            val server = repository.getServerById(serverId) ?: return@launch
+            realServerManager.sendCommand(serverId, "deop ${player.name}")
+            
             val newOps = _ops.value.filter { it.uuid != player.uuid }
-            playerManager.saveOps(newOps)
+            playerManager.saveOps(server.path, server.uri, newOps)
             _ops.value = newOps
         }
     }
 
     fun addWhitelist(name: String) {
         viewModelScope.launch {
+            val server = repository.getServerById(serverId) ?: return@launch
+            realServerManager.sendCommand(serverId, "whitelist add $name")
+            
             val newList = _whitelist.value.toMutableList().apply {
                 add(WhitelistEntry(uuid = UUID.randomUUID().toString(), name = name))
             }
-            playerManager.saveWhitelist(newList)
+            playerManager.saveWhitelist(server.path, server.uri, newList)
             _whitelist.value = newList
         }
     }
 
     fun removeWhitelist(player: WhitelistEntry) {
         viewModelScope.launch {
+            val server = repository.getServerById(serverId) ?: return@launch
+            realServerManager.sendCommand(serverId, "whitelist remove ${player.name}")
+            
             val newList = _whitelist.value.filter { it.uuid != player.uuid }
-            playerManager.saveWhitelist(newList)
+            playerManager.saveWhitelist(server.path, server.uri, newList)
             _whitelist.value = newList
         }
     }
@@ -105,5 +126,13 @@ class PlayersViewModel @Inject constructor(
 
     fun sendWhisper(targetPlayer: String, message: String) {
         realServerManager.sendCommand(serverId, "tell $targetPlayer $message")
+    }
+
+    fun kickPlayer(targetPlayer: String) {
+        realServerManager.sendCommand(serverId, "kick $targetPlayer")
+    }
+
+    fun banPlayer(targetPlayer: String) {
+        realServerManager.sendCommand(serverId, "ban $targetPlayer")
     }
 }

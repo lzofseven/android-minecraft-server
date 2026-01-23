@@ -46,6 +46,9 @@ class ModDetailsViewModel @Inject constructor(
 
     private val _selectedGameVersion = MutableStateFlow<String?>(null)
     val selectedGameVersion: StateFlow<String?> = _selectedGameVersion.asStateFlow()
+    
+    private val _compatibleLoaders = MutableStateFlow<List<String>>(emptyList())
+    val compatibleLoaders: StateFlow<List<String>> = _compatibleLoaders.asStateFlow()
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -55,6 +58,22 @@ class ModDetailsViewModel @Inject constructor(
 
     private val _downloadProgressMap = MutableStateFlow<Map<String, Float>>(emptyMap())
     val downloadProgressMap: StateFlow<Map<String, Float>> = _downloadProgressMap.asStateFlow()
+
+    private val _showAlphaBeta = MutableStateFlow(false)
+    val showAlphaBeta: StateFlow<Boolean> = _showAlphaBeta.asStateFlow()
+
+    private val _selectedLoader = MutableStateFlow<String?>(null)
+    val selectedLoader: StateFlow<String?> = _selectedLoader.asStateFlow()
+
+    fun toggleAlphaBeta() {
+        _showAlphaBeta.value = !_showAlphaBeta.value
+        applyFilter()
+    }
+
+    fun setLoaderFilter(loader: String?) {
+        _selectedLoader.value = loader
+        applyFilter()
+    }
 
     init {
         loadData()
@@ -67,43 +86,44 @@ class ModDetailsViewModel @Inject constructor(
                 // 1. Fetch Project
                 val projectDeferred = viewModelScope.async { modrinthRepository.getProject(projectId) }
                 
-                // 2. Fetch ALL versions (no gameVersion filter for maximum options)
+                // 2. Fetch ALL versions (no loader/gameVersion filter) to show full history
                 val server = serverRepository.getServerById(serverId)
-                val loaders = if (server != null) {
+                val compatibleLoaders = if (server != null) {
                     when (server.type.lowercase()) {
                         "fabric" -> listOf("fabric")
                         "forge" -> listOf("forge")
                         "neoforge" -> listOf("neoforge")
                         "paper", "spigot", "bukkit" -> listOf("paper", "bukkit", "spigot")
+                        "pocketmine", "bedrock" -> listOf("bedrock") // PocketMine uses 'pocketmine' usually but Modrinth uses 'bedrock'/'pocketmine'?
                         else -> null
                     }
                 } else null
+                
+                _compatibleLoaders.value = compatibleLoaders ?: emptyList()
 
                 val versionsDeferred = viewModelScope.async {
-                    modrinthRepository.getVersions(projectId, loaders = loaders, gameVersions = null)
+                    // Fetch EVERYTHING. We will flag incompatibility in UI.
+                    modrinthRepository.getVersions(projectId, loaders = null, gameVersions = null)
                 }
 
                 _project.value = projectDeferred.await()
                 val allVers = versionsDeferred.await()
                 _allVersions.value = allVers
                 
-                // Extract unique game versions, filtered to official releases only, sorted descending
+                // Extract unique game versions
                 val gameVersions = allVers
                     .flatMap { it.gameVersions }
                     .distinct()
                     .filter { v ->
-                        // Only keep official releases (e.g., "1.21", "1.20.4")
-                        // Exclude snapshots, pre-releases, release candidates, alpha, beta
                         !v.contains("snapshot", ignoreCase = true) &&
                         !v.contains("pre", ignoreCase = true) &&
                         !v.contains("rc", ignoreCase = true) &&
                         !v.contains("alpha", ignoreCase = true) &&
                         !v.contains("beta", ignoreCase = true) &&
-                        !v.contains("w", ignoreCase = true) && // Weekly snapshots like "24w10a"
-                        v.matches(Regex("^[0-9]+\\.[0-9]+(\\.[0-9]+)?$")) // Must match X.Y or X.Y.Z format
+                        !v.contains("w", ignoreCase = true) &&
+                        v.matches(Regex("^[0-9]+\\.[0-9]+(\\.[0-9]+)?$"))
                     }
                     .sortedByDescending { v ->
-                        // Sort by numeric version parts
                         v.split(".").mapNotNull { it.toIntOrNull() }.joinToString(".") { String.format("%03d", it) }
                     }
                 _availableGameVersions.value = gameVersions
@@ -132,24 +152,52 @@ class ModDetailsViewModel @Inject constructor(
 
     private fun applyFilter() {
         val selected = _selectedGameVersion.value
-        _versions.value = if (selected == null) {
-            _allVersions.value
-        } else {
-            _allVersions.value.filter { it.gameVersions.contains(selected) }
+        val loader = _selectedLoader.value
+        val showAll = _showAlphaBeta.value
+
+        var filteredList = _allVersions.value
+
+        // Filter by Game Version
+        if (selected != null) {
+            filteredList = filteredList.filter { it.gameVersions.contains(selected) }
         }
+
+        // Filter by Loader (NEW)
+        if (loader != null) {
+            filteredList = filteredList.filter { it.loaders.contains(loader) }
+        }
+        
+        // Filter by Release Type
+        if (!showAll) {
+            filteredList = filteredList.filter { it.versionType == "release" }
+        }
+        
+        _versions.value = filteredList
     }
 
     fun downloadVersion(version: ModrinthVersion) {
         viewModelScope.launch {
             val server = serverRepository.getServerById(serverId) ?: return@launch
             val project = _project.value ?: return@launch
+            
+            val metaManager = com.lzofseven.mcserver.util.ContentMetaManager(context, server.uri ?: server.path)
 
             if (version.files.isEmpty()) {
                 _toastMessage.emit("Erro: Esta versão não possui arquivos.")
                 return@launch
             }
 
-            val file = version.files.find { it.primary } ?: version.files.first()
+            // Heuristic to pick the best file based on the selected loader
+            val loaderFilter = _selectedLoader.value
+            val file = if (loaderFilter != null) {
+                // If user selected a loader, prioritize files containing that name
+                version.files.find { it.filename.contains(loaderFilter, ignoreCase = true) } 
+                    ?: version.files.find { it.primary } 
+                    ?: version.files.first()
+            } else {
+                // Fallback to primary
+                version.files.find { it.primary } ?: version.files.first()
+            }
 
             val folderName = when {
                 project.loaders.contains("paper") || project.loaders.contains("bukkit") || project.loaders.contains("spigot") -> "plugins" // Heuristic
@@ -239,6 +287,19 @@ class ModDetailsViewModel @Inject constructor(
                     _downloadProgressMap.value = _downloadProgressMap.value.toMutableMap().apply {
                         remove(version.id)
                     }
+                    
+                    // Save Metadata
+                    metaManager.saveMetadata(
+                        com.lzofseven.mcserver.util.ContentMetadata(
+                            projectId = project.id,
+                            title = project.title,
+                            iconUrl = project.iconUrl,
+                            version = version.versionNumber,
+                            projectType = if (finalFolderName == "plugins") "plugin" else "mod",
+                            filename = file.filename
+                        )
+                    )
+                    
                     _toastMessage.emit("Download concluído: ${file.filename}")
                 } else {
                     _toastMessage.emit("Erro no download: ${response.code}")

@@ -12,3 +12,12 @@ data class InstalledContent(
     val iconUrl: String? = null,
     val description: String? = null
 )
+
+data class BrowserItem(
+    val name: String,
+    val isDirectory: Boolean,
+    val size: Long,
+    val extension: String,
+    val fullPath: String, // String representation of File path or content URI
+    val isSaf: Boolean
+)

@@ -13,10 +13,14 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import com.lzofseven.mcserver.data.local.entity.MCServerEntity
 import com.lzofseven.mcserver.ui.screens.config.UiEvent.ShowToast
+import dagger.hilt.android.qualifiers.ApplicationContext
+import android.content.Context
+import com.lzofseven.mcserver.util.SystemInfoUtils
 
 @HiltViewModel
 class ConfigViewModel @Inject constructor(
     private val repository: com.lzofseven.mcserver.data.repository.ServerRepository,
+    @ApplicationContext private val context: Context,
     savedStateHandle: androidx.lifecycle.SavedStateHandle
 ) : ViewModel() {
     
@@ -60,11 +64,25 @@ class ConfigViewModel @Inject constructor(
     private val _ramThreshold = MutableStateFlow(90)
     val ramThreshold: StateFlow<Int> = _ramThreshold.asStateFlow()
     
+    private val _javaVersion = MutableStateFlow(17)
+    val javaVersion: StateFlow<Int> = _javaVersion.asStateFlow()
+    
+    private val _ramInfo = MutableStateFlow<SystemInfoUtils.RamInfo?>(null)
+    val ramInfo: StateFlow<SystemInfoUtils.RamInfo?> = _ramInfo.asStateFlow()
+    
     private val _uiEvent = kotlinx.coroutines.flow.MutableSharedFlow<UiEvent>()
     val uiEvent = _uiEvent.asSharedFlow()
+    
+    private val _restartRequiredEvent = kotlinx.coroutines.flow.MutableSharedFlow<Boolean>()
+    val restartRequiredEvent = _restartRequiredEvent.asSharedFlow()
 
     init {
         loadServerConfig()
+        updateRamInfo()
+    }
+
+    fun updateRamInfo() {
+        _ramInfo.value = SystemInfoUtils.getRamInfo(context)
     }
 
     private fun loadServerConfig() {
@@ -76,8 +94,9 @@ class ConfigViewModel @Inject constructor(
                 _mcVersion.value = server.version
                 _ramAllocation.value = server.ramAllocationMB
                 _worldPath.value = server.path
+                _javaVersion.value = server.javaVersion
                 
-                loadExtraConfig(server.path)
+                loadExtraConfig(server.uri ?: server.path, server.javaVersion)
             }
         }
     }
@@ -126,38 +145,67 @@ class ConfigViewModel @Inject constructor(
         _ramThreshold.value = threshold
     }
 
+    fun setJavaVersion(version: Int) {
+        _javaVersion.value = version
+    }
+
     fun saveConfig() {
         viewModelScope.launch {
             currentServer?.let { server ->
                 val typeChanged = _serverType.value.name != server.type
+                val ramChanged = _ramAllocation.value != server.ramAllocationMB
+                
+                // Get old properties to preserve level-name
+                val propsManager = com.lzofseven.mcserver.util.ServerPropertiesManager(context, server.uri ?: server.path)
+                val oldProps = propsManager.load()
+                val currentLevelName = oldProps["level-name"] ?: "world"
+
                 val updated = server.copy(
                     ramAllocationMB = _ramAllocation.value,
                     path = _worldPath.value,
                     uri = if (_worldPath.value.startsWith("content://")) _worldPath.value else server.uri,
-                    type = _serverType.value.name
+                    type = _serverType.value.name,
+                    javaVersion = _javaVersion.value
                 )
                 repository.updateServer(updated)
+                
+                // If engine changed, ensure we preserve the world folder name
+                if (typeChanged) {
+                    propsManager.save(mapOf("level-name" to currentLevelName))
+                }
                 
                 // If type changed, delete old jar to force re-download
                 if (typeChanged) {
                     withContext(kotlinx.coroutines.Dispatchers.IO) {
                         try {
-                            val serverDir = java.io.File(server.path)
-                            java.io.File(serverDir, "server.jar").delete()
-                            java.io.File(serverDir, "PocketMine-MP.phar").delete()
+                            // Clean source directory jars
+                            if (server.uri != null) {
+                                val rootUri = android.net.Uri.parse(server.uri)
+                                val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, rootUri)
+                                rootDoc?.findFile("server.jar")?.delete()
+                                rootDoc?.findFile("PocketMine-MP.phar")?.delete()
+                            } else {
+                                val serverDir = java.io.File(server.path)
+                                java.io.File(serverDir, "server.jar").delete()
+                                java.io.File(serverDir, "PocketMine-MP.phar").delete()
+                            }
+                            
+                            // Clean execution directory (Safe Copy-to-Run area)
+                            val executionDir = java.io.File(context.filesDir, "server_execution_${server.id}")
+                            if (executionDir.exists()) {
+                                executionDir.deleteRecursively()
+                                executionDir.mkdirs()
+                            }
                         } catch (e: Exception) { e.printStackTrace() }
                     }
                 }
                 
-                // Save Extra Configs to manager_config.properties
-                val serverDir = java.io.File(server.path)
-                if (!serverDir.exists()) serverDir.mkdirs()
-                
-                val configFile = java.io.File(serverDir, "manager_config.properties")
                 val props = java.util.Properties()
                 props.setProperty("cpuCores", _cpuCores.value.toString())
                 props.setProperty("forceMaxFrequency", _forceMaxFrequency.value.toString())
                 props.setProperty("autoAcceptEula", _autoAcceptEula.value.toString())
+                
+                props.setProperty("javaVersion", _javaVersion.value.toString())
                 
                 // Notifications
                 props.setProperty("notifyStatus", _notifyStatus.value.toString())
@@ -168,25 +216,56 @@ class ConfigViewModel @Inject constructor(
                 
                 withContext(kotlinx.coroutines.Dispatchers.IO) {
                     try {
-                        configFile.outputStream().use { 
-                            props.store(it, "MC Server Manager Extra Config") 
+                        if (server.uri != null) {
+                            val rootUri = android.net.Uri.parse(server.uri)
+                            val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, rootUri)
+                            if (rootDoc != null && rootDoc.exists()) {
+                                // Save manager_config.properties
+                                val configFile = rootDoc.findFile("manager_config.properties") 
+                                    ?: rootDoc.createFile("text/plain", "manager_config.properties")
+                                configFile?.let {
+                                    context.contentResolver.openOutputStream(it.uri, "wt")?.use { out ->
+                                        props.store(out, "MC Server Manager Extra Config")
+                                    }
+                                }
+                                
+                                // Save EULA
+                                if (_autoAcceptEula.value) {
+                                    val eulaFile = rootDoc.findFile("eula.txt") 
+                                        ?: rootDoc.createFile("text/plain", "eula.txt")
+                                    eulaFile?.let {
+                                        context.contentResolver.openOutputStream(it.uri, "wt")?.use { out ->
+                                            out.write("eula=true\n".toByteArray())
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // File Logic
+                            val serverDir = java.io.File(server.path)
+                            if (!serverDir.exists()) serverDir.mkdirs()
+                            
+                            val configFile = java.io.File(serverDir, "manager_config.properties")
+                            configFile.outputStream().use { 
+                                props.store(it, "MC Server Manager Extra Config") 
+                            }
+                            
+                            if (_autoAcceptEula.value) {
+                                val eulaFile = java.io.File(serverDir, "eula.txt")
+                                eulaFile.writeText("eula=true\n")
+                            }
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
                 }
 
-                // Handle EULA
-                if (_autoAcceptEula.value) {
-                     withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        try {
-                             val eulaFile = java.io.File(serverDir, "eula.txt")
-                             eulaFile.writeText("eula=true\n")
-                        } catch (e: Exception) { e.printStackTrace() }
-                     }
-                }
-                
                 _uiEvent.emit(UiEvent.ShowToast("Configurações salvas com sucesso!"))
+                
+                // Check if engine or critical resource changed
+                if (typeChanged || ramChanged) {
+                    _restartRequiredEvent.emit(true)
+                }
             }
         }
     }
@@ -194,48 +273,70 @@ class ConfigViewModel @Inject constructor(
     fun deleteServer(navController: androidx.navigation.NavController) {
         viewModelScope.launch {
             currentServer?.let { server ->
-                // Delete from DB
                 repository.deleteServer(server)
-                
-                // Delete Files (Optional: Ask user? For now assumes yes based on request)
-                withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    try {
-                         // Careful: Only delete if path is clear? 
-                         // For now, let's keep files safe or delete? 
-                         // User said "delete the server", implies removing from app list mainly.
-                         // But usually means deleting data too. 
-                         // I will delete the entry first, keeping data safe unless requested.
-                         // Actually, user said "deletar o servidor", usually implies full deletion.
-                         // Let's just remove from DB for safety, user can delete folder manually.
-                    } catch (e: Exception) { e.printStackTrace() }
-                }
-                
                 _uiEvent.emit(UiEvent.ShowToast("Servidor removido"))
-                // Navigate back to Home and clear stack
-                 navController.navigate("server_list") {
-                     popUpTo("server_list") { inclusive = true }
-                 }
+                navController.navigate("server_list") {
+                    popUpTo("server_list") { inclusive = true }
+                }
             }
         }
     }
     
-    private fun loadExtraConfig(serverPath: String) {
+    private fun loadExtraConfig(serverPath: String, defaultJavaVersion: Int = 17) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val configFile = java.io.File(serverPath, "manager_config.properties")
-            android.util.Log.d("ConfigViewModel", "Loading config from: ${configFile.absolutePath}")
+            val props = java.util.Properties()
+            var loaded = false
             
-            if (configFile.exists()) {
-                android.util.Log.d("ConfigViewModel", "Config file exists. Reading...")
-                val props = java.util.Properties()
+            // Try SAF first if path is Content URI
+            if (serverPath.startsWith("content://")) {
                 try {
-                    configFile.inputStream().use { props.load(it) }
-                    
+                     val uri = android.net.Uri.parse(serverPath)
+                     val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                     val configFile = rootDoc?.findFile("manager_config.properties")
+                     if (configFile != null) {
+                         context.contentResolver.openInputStream(configFile.uri)?.use { props.load(it) }
+                         loaded = true
+                     }
+                     
+                     // Check EULA for defaults logic
+                     if (!loaded) {
+                         val eulaFile = rootDoc?.findFile("eula.txt")
+                         if (eulaFile != null) {
+                             val content = context.contentResolver.openInputStream(eulaFile.uri)?.bufferedReader()?.use { reader -> reader.readText() } ?: ""
+                             if (content.contains("eula=true")) {
+                                 _autoAcceptEula.value = true
+                             }
+                         }
+                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            
+            if (!loaded) {
+                // Try File Logic
+                val configFile = java.io.File(serverPath, "manager_config.properties")
+                if (configFile.exists()) {
+                    try {
+                        configFile.inputStream().use { props.load(it) }
+                        loaded = true
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                } else {
+                     val eulaFile = java.io.File(serverPath, "eula.txt")
+                     if (eulaFile.exists() && eulaFile.readText().contains("eula=true")) {
+                         _autoAcceptEula.value = true
+                     }
+                }
+            }
+            
+            if (loaded) {
+                try {
                     val cores = props.getProperty("cpuCores", "2").toIntOrNull() ?: 2
                     val maxFreq = props.getProperty("forceMaxFrequency", "false").toBoolean()
                     val autoEula = props.getProperty("autoAcceptEula", "true").toBoolean()
                     
-                    android.util.Log.d("ConfigViewModel", "Read values -> Cores: $cores, MaxFreq: $maxFreq")
-
                     _cpuCores.value = cores
                     _forceMaxFrequency.value = maxFreq
                     _autoAcceptEula.value = autoEula
@@ -245,18 +346,7 @@ class ConfigViewModel @Inject constructor(
                     _notifyPerformance.value = props.getProperty("notifyPerformance", "false").toBoolean()
                     _cpuThreshold.value = props.getProperty("cpuThreshold", "80").toIntOrNull() ?: 80
                     _ramThreshold.value = props.getProperty("ramThreshold", "90").toIntOrNull() ?: 90
-                    
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    android.util.Log.e("ConfigViewModel", "Error loading config", e)
-                }
-            } else {
-                 android.util.Log.d("ConfigViewModel", "Config file not found. Using defaults.")
-                 // Defaults or check if EULA exists
-                 val eulaFile = java.io.File(serverPath, "eula.txt")
-                 if (eulaFile.exists() && eulaFile.readText().contains("eula=true")) {
-                     _autoAcceptEula.value = true
-                 }
+                } catch (e: Exception) { e.printStackTrace() }
             }
         }
     }
