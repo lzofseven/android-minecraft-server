@@ -58,6 +58,14 @@ fun ConfigScreen(
             showRestartModal = true
         }
     }
+    
+    val isSaving by viewModel.isSaving.collectAsState()
+    
+    LaunchedEffect(key1 = true) {
+        viewModel.saveSuccessEvent.collect {
+            navController.popBackStack()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(BackgroundDark)) {
         Scaffold(
@@ -100,37 +108,51 @@ fun ConfigScreen(
                         onExpandedChange = { expanded = !expanded },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        OutlinedTextField(
-                            value = serverType.displayName,
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                            leadingIcon = {
-                                val icon = when (serverType) {
-                                    ServerType.PAPER -> Icons.Default.Speed
-                                    ServerType.FABRIC -> Icons.Default.Layers
-                                    ServerType.VANILLA -> Icons.Default.Grass
-                                    ServerType.FORGE -> Icons.Default.Construction
-                                    ServerType.NEOFORGE -> Icons.Default.AutoAwesome
-                                }
-                                Icon(icon, null, tint = PrimaryDark)
-                            },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = PrimaryDark,
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                                unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
-                                focusedContainerColor = Color.White.copy(alpha = 0.05f),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            modifier = Modifier.menuAnchor().fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        )
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = serverType.displayName,
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                leadingIcon = {
+                                    val icon = when (serverType) {
+                                        ServerType.PAPER -> Icons.Default.Speed
+                                        ServerType.FABRIC -> Icons.Default.Layers
+                                        ServerType.VANILLA -> Icons.Default.Grass
+                                        ServerType.FORGE -> Icons.Default.Construction
+                                        ServerType.NEOFORGE -> Icons.Default.AutoAwesome
+                                        ServerType.BUKKIT -> Icons.Default.Inventory
+                                        ServerType.SPIGOT -> Icons.Default.Bolt
+                                    }
+                                    Icon(icon, null, tint = PrimaryDark)
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = PrimaryDark,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                                    unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                    focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            // Click overlay
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .clickable { expanded = !expanded }
+                            )
+                        }
                         
                         ExposedDropdownMenu(
                             expanded = expanded,
                             onDismissRequest = { expanded = false },
-                            modifier = Modifier.exposedDropdownSize().background(SurfaceDark).border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(4.dp))
+                            modifier = Modifier
+                                .exposedDropdownSize(matchTextFieldWidth = true)
+                                .heightIn(max = 250.dp)
+                                .background(SurfaceDark)
+                                .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(4.dp))
                         ) {
                             ServerType.values().forEach { type ->
                                 val icon = when (type) {
@@ -139,6 +161,8 @@ fun ConfigScreen(
                                     ServerType.VANILLA -> Icons.Default.Grass
                                     ServerType.FORGE -> Icons.Default.Construction
                                     ServerType.NEOFORGE -> Icons.Default.AutoAwesome
+                                    ServerType.BUKKIT -> Icons.Default.Inventory
+                                    ServerType.SPIGOT -> Icons.Default.Bolt
                                 }
                                 
                                 DropdownMenuItem(
@@ -397,13 +421,17 @@ fun ConfigScreen(
                 Button(
                     onClick = { 
                         viewModel.saveConfig()
-                        navController.popBackStack()
                     },
                     modifier = Modifier.fillMaxWidth().height(64.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryDark),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    enabled = !isSaving
                 ) {
-                    Text("SALVAR E APLICAR", fontWeight = FontWeight.Black, color = BackgroundDark, letterSpacing = 2.sp)
+                    if (isSaving) {
+                        CircularProgressIndicator(color = BackgroundDark, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text("SALVAR E APLICAR", fontWeight = FontWeight.Black, color = BackgroundDark, letterSpacing = 2.sp)
+                    }
                 }
                 
                 // Delete Button

@@ -21,7 +21,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import androidx.compose.foundation.clickable
 import coil.compose.AsyncImage
+import com.lzofseven.mcserver.data.model.ModrinthFile
 import com.lzofseven.mcserver.data.model.ModrinthVersion
 import com.lzofseven.mcserver.ui.theme.BackgroundDark
 import com.lzofseven.mcserver.ui.theme.PrimaryDark
@@ -40,12 +42,24 @@ fun ModDetailsScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val downloadProgressMap by viewModel.downloadProgressMap.collectAsState()
     val compatibleLoaders by viewModel.compatibleLoaders.collectAsState()
+    val pendingDownload by viewModel.pendingDownload.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(key1 = true) {
         viewModel.toastMessage.collect { msg ->
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // File Selection Dialog
+    if (pendingDownload != null) {
+        FileSelectionDialog(
+            files = pendingDownload!!.files,
+            onFileSelected = { file ->
+                viewModel.downloadSpecificFile(pendingDownload!!.uiVersion, file)
+            },
+            onDismiss = { viewModel.dismissFileSelection() }
+        )
     }
 
     Scaffold(
@@ -109,26 +123,37 @@ fun ModDetailsScreen(
                                     onExpandedChange = { expanded = !expanded },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    OutlinedTextField(
-                                        value = selectedGameVersion ?: "Todas as Versões",
-                                        onValueChange = {},
-                                        readOnly = true,
-                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                                        modifier = Modifier.menuAnchor().fillMaxWidth(),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = PrimaryDark,
-                                            unfocusedBorderColor = Color.White.copy(0.2f),
-                                            focusedContainerColor = SurfaceDark,
-                                            unfocusedContainerColor = SurfaceDark,
-                                            focusedTextColor = Color.White,
-                                            unfocusedTextColor = Color.White
+                                    Box(modifier = Modifier.fillMaxWidth()) {
+                                        OutlinedTextField(
+                                            value = selectedGameVersion ?: "Todas as Versões",
+                                            onValueChange = {},
+                                            readOnly = true,
+                                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = PrimaryDark,
+                                                unfocusedBorderColor = Color.White.copy(0.2f),
+                                                focusedContainerColor = SurfaceDark,
+                                                unfocusedContainerColor = SurfaceDark,
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White
+                                            )
                                         )
-                                    )
+                                        // Click overlay
+                                        Box(
+                                            modifier = Modifier
+                                                .matchParentSize()
+                                                .clickable { expanded = !expanded }
+                                        )
+                                    }
                                     ExposedDropdownMenu(
                                         expanded = expanded,
                                         onDismissRequest = { expanded = false },
-                                        modifier = Modifier.background(SurfaceDark)
+                                        modifier = Modifier
+                                            .exposedDropdownSize(matchTextFieldWidth = true)
+                                            .heightIn(max = 250.dp)
+                                            .background(SurfaceDark)
                                     ) {
                                         DropdownMenuItem(
                                             text = { Text("Todas as Versões (${viewModel.versions.value.size})", color = Color.White) },
@@ -215,10 +240,10 @@ fun ModDetailsScreen(
                             Text("Nenhuma versão encontrada para este filtro.", color = Color.White.copy(0.5f))
                         }
                     } else {
-                        items(versions) { version ->
-                            val isCompatible = compatibleLoaders.isEmpty() || version.loaders.any { it in compatibleLoaders }
-                            VersionItem(version, downloadProgressMap[version.id], isCompatible) {
-                                viewModel.downloadVersion(version)
+                        items(versions) { uiVersion ->
+                            val isCompatible = compatibleLoaders.isEmpty() || uiVersion.loader in compatibleLoaders
+                            VersionItem(uiVersion, downloadProgressMap[uiVersion.original.id], isCompatible) {
+                                viewModel.downloadVersion(uiVersion)
                             }
                         }
                     }
@@ -229,7 +254,8 @@ fun ModDetailsScreen(
 }
 
 @Composable
-fun VersionItem(version: ModrinthVersion, progress: Float?, isCompatible: Boolean, onDownload: () -> Unit) {
+fun VersionItem(uiVersion: ModDetailsViewModel.UiVersion, progress: Float?, isCompatible: Boolean, onDownload: () -> Unit) {
+    val version = uiVersion.original
     Card(
         colors = CardDefaults.cardColors(containerColor = SurfaceDark),
         shape = RoundedCornerShape(12.dp),
@@ -243,6 +269,9 @@ fun VersionItem(version: ModrinthVersion, progress: Float?, isCompatible: Boolea
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(version.versionNumber, style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                    Surface(color = PrimaryDark.copy(0.1f), shape = RoundedCornerShape(4.dp), modifier = Modifier.padding(start = 8.dp)) {
+                        Text(uiVersion.loader.replaceFirstChar { it.uppercase() }, color = PrimaryDark, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontWeight = FontWeight.Bold)
+                    }
                     if (!isCompatible) {
                         Spacer(Modifier.width(8.dp))
                         Surface(color = com.lzofseven.mcserver.ui.theme.ErrorDark.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
@@ -251,7 +280,7 @@ fun VersionItem(version: ModrinthVersion, progress: Float?, isCompatible: Boolea
                     }
                 }
                 Text(
-                    "${version.gameVersions.joinToString(", ")} • ${version.loaders.joinToString(", ")}",
+                    "${version.gameVersions.joinToString(", ")}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(0.5f)
                 )
@@ -274,4 +303,110 @@ private fun formatDownloads(downloads: Int): String {
         downloads >= 1_000 -> "${downloads / 1_000}K"
         else -> downloads.toString()
     }
+}
+
+@Composable
+fun FileSelectionDialog(
+    files: List<ModrinthFile>,
+    onFileSelected: (ModrinthFile) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceDark,
+        title = {
+            Text(
+                "Escolha o Arquivo",
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Esta versão possui múltiplos arquivos. Escolha o correto para seu servidor:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(0.7f)
+                )
+                Spacer(Modifier.height(8.dp))
+                
+                files.forEachIndexed { index, file ->
+                    val loaderHint = when {
+                        file.filename.contains("paper", ignoreCase = true) -> "Paper"
+                        file.filename.contains("spigot", ignoreCase = true) -> "Spigot"
+                        file.filename.contains("bukkit", ignoreCase = true) -> "Bukkit"
+                        file.filename.contains("fabric", ignoreCase = true) -> "Fabric"
+                        file.filename.contains("forge", ignoreCase = true) -> "Forge"
+                        file.filename.contains("neoforge", ignoreCase = true) -> "NeoForge"
+                        file.primary -> "Principal"
+                        else -> null
+                    }
+                    
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onFileSelected(file) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (file.primary) PrimaryDark.copy(0.15f) else BackgroundDark
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    file.filename,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 2
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "${file.size / 1024} KB",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White.copy(0.5f)
+                                    )
+                                    if (loaderHint != null) {
+                                        Surface(
+                                            color = PrimaryDark.copy(0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                loaderHint,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = PrimaryDark,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = "Baixar",
+                                tint = PrimaryDark,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar", color = Color.White.copy(0.7f))
+            }
+        }
+    )
 }

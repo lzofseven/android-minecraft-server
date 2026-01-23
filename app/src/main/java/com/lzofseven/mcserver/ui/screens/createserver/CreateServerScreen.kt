@@ -274,6 +274,8 @@ private fun ServerTypeCard(
         ServerType.VANILLA -> "Experiência original"
         ServerType.FORGE -> "Para mods clássicos"
         ServerType.NEOFORGE -> "Forge moderno"
+        ServerType.BUKKIT -> "O clássico sistema de plugins"
+        ServerType.SPIGOT -> "Otimizado para plugins"
     }
     
     val icon = when (type) {
@@ -282,6 +284,8 @@ private fun ServerTypeCard(
         ServerType.VANILLA -> Icons.Default.Grass
         ServerType.FORGE -> Icons.Default.Construction
         ServerType.NEOFORGE -> Icons.Default.AutoAwesome
+        ServerType.BUKKIT -> Icons.Default.Inventory
+        ServerType.SPIGOT -> Icons.Default.Bolt
     }
     
     Card(
@@ -487,26 +491,38 @@ fun StepTwo(state: CreateServerState, viewModel: CreateServerViewModel) {
                 onExpandedChange = { expanded = !expanded },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                OutlinedTextField(
-                    value = state.version,
-                    onValueChange = {},
-                    readOnly = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PrimaryDark,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                        unfocusedContainerColor = SurfaceDark,
-                        focusedContainerColor = SurfaceDark,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = state.version,
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PrimaryDark,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                            unfocusedContainerColor = SurfaceDark,
+                            focusedContainerColor = SurfaceDark,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    // Overlay to capture clicks specifically for the dropdown
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { expanded = !expanded }
+                    )
+                }
                 ExposedDropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
-                    modifier = Modifier.background(SurfaceDark).border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(4.dp))
+                    modifier = Modifier
+                        .exposedDropdownSize(matchTextFieldWidth = true)
+                        .heightIn(max = 250.dp)
+                        .background(SurfaceDark)
+                        .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(4.dp))
                 ) {
                     versions.forEach { version ->
                         DropdownMenuItem(
