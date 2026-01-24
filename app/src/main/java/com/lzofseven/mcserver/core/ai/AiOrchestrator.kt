@@ -193,6 +193,9 @@ class AiOrchestrator @Inject constructor(
                     val limit = (args["limit"] as? Number)?.toInt() ?: 5
                     recallMemory(serverId, limit)
                 }
+                "get_server_info" -> {
+                    getServerInfo(serverId)
+                }
                 else -> "Tool não implementada: $name"
             }
         } catch (e: Exception) {
@@ -436,6 +439,39 @@ class AiOrchestrator @Inject constructor(
     private fun getServerStatus(serverId: String): String {
         val running = serverManager.isServerRunning(serverId)
         return "Status: ${if (running) "Online" else "Offline"}"
+    }
+
+    private fun getServerInfo(serverId: String): String {
+        return try {
+            val executionDir = serverManager.getExecutionDirectory(serverId)
+            val propsFile = File(executionDir, "server.properties")
+            if (propsFile.exists()) {
+                val props = java.util.Properties()
+                propsFile.inputStream().use { props.load(it) }
+                
+                val versionStr = try {
+                    // Try to find version jar/txt if available or infer
+                    // For now, return what we know from properties
+                    "Desconhecida (Verifique o jar)"
+                } catch (e: Exception) { "?" }
+
+                """
+                === INFORMAÇÕES DO SERVIDOR ===
+                MOTD: ${props.getProperty("motd", "Minecraft Server")}
+                Dificuldade: ${props.getProperty("difficulty", "easy")}
+                Gamemode Padrão: ${props.getProperty("gamemode", "survival")}
+                Max Players: ${props.getProperty("max-players", "20")}
+                PVP: ${props.getProperty("pvp", "true")}
+                Online Mode: ${props.getProperty("online-mode", "true")}
+                Porta: ${props.getProperty("server-port", "25565")}
+                Level Name: ${props.getProperty("level-name", "world")}
+                """.trimIndent()
+            } else {
+                "Arquivo server.properties não encontrado. O servidor pode não ter sido iniciado ainda."
+            }
+        } catch (e: Exception) {
+            "Erro ao ler informações do servidor: ${e.message}"
+        }
     }
 
     private suspend fun getPlayerPosition(playerName: String, serverId: String): String {

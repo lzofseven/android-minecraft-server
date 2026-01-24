@@ -103,6 +103,12 @@ object MinecraftToolProvider {
                             Schema.int("limit", "Quantas memórias recentes retornar (padrão: 5).")
                         ),
                         requiredParameters = emptyList()
+                    ),
+                    FunctionDeclaration(
+                        name = "get_server_info",
+                        description = "Retorna detalhes técnicos do servidor (versão, dificuldade, gamemode, motd) lendo o arquivo server.properties.",
+                        parameters = emptyList(),
+                        requiredParameters = emptyList()
                     )
                 )
             )
