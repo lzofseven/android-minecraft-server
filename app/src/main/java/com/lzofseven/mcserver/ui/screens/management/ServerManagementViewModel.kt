@@ -95,6 +95,22 @@ class ServerManagementViewModel @Inject constructor(
     private val _uiEvent = MutableSharedFlow<UiEvent>()
     val uiEvent = _uiEvent.asSharedFlow()
     
+    val serverStatus: StateFlow<com.lzofseven.mcserver.core.execution.ServerStatus> = 
+        serverManager.getServerStatusFlow(serverId)
+
+    fun toggleServer() {
+        viewModelScope.launch {
+            if (serverManager.isRunning(serverId)) {
+                serverManager.stopServer(serverId)
+            } else {
+                val server = repository.getServerById(serverId)
+                if (server != null) {
+                    serverManager.startServer(server)
+                }
+            }
+        }
+    }
+    
     private var propertiesManager: ServerPropertiesManager? = null
 
     init {
