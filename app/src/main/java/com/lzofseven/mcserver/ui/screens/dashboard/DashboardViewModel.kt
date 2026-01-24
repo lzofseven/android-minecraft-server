@@ -51,8 +51,7 @@ class DashboardViewModel @Inject constructor(
     private val _serverEntity = MutableStateFlow<MCServerEntity?>(null)
     val serverEntity: StateFlow<MCServerEntity?> = _serverEntity.asStateFlow()
     
-    private val _serverStatus = MutableStateFlow(ServerStatus.STOPPED)
-    val serverStatus: StateFlow<ServerStatus> = _serverStatus.asStateFlow()
+    val serverStatus: StateFlow<ServerStatus> = serverManager.getServerStatusFlow(serverId)
     
     private val _playitLink = MutableStateFlow<String?>(null)
     val playitLink: StateFlow<String?> = _playitLink.asStateFlow()
@@ -172,7 +171,6 @@ class DashboardViewModel @Inject constructor(
 
         loadProperties()
         checkEula()
-        checkServerPersistence(server)
     }
 
     fun refreshIcon(server: MCServerEntity? = _serverEntity.value) {
@@ -208,23 +206,7 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private fun checkServerPersistence(server: MCServerEntity) {
-        viewModelScope.launch {
-            if (serverManager.isRunning(server.id)) {
-                _serverStatus.value = ServerStatus.RUNNING
-                log("Servidor detectado em execução (persistência)")
-                playitManager.start()
-            } else {
-                // Try to detect externally
-                val isActuallyRunning = serverManager.checkProcessHealth(server.id)
-                if (isActuallyRunning) {
-                    _serverStatus.value = ServerStatus.RUNNING
-                    log("Servidor detectado via processo do sistema")
-                    playitManager.start()
-                }
-            }
-        }
-    }
+    // checkServerPersistence removed - handled by RealServerManager reactive flows
 
     private suspend fun checkEula() {
         val server = _serverEntity.value ?: return
@@ -385,14 +367,12 @@ class DashboardViewModel @Inject constructor(
             .build()
         
         workManager.enqueue(workRequest)
-        _serverStatus.value = ServerStatus.INSTALLING
         
         viewModelScope.launch {
             workManager.getWorkInfoByIdFlow(workRequest.id).collect { workInfo ->
                 if (workInfo != null) {
                     when(workInfo.state) {
                         WorkInfo.State.SUCCEEDED -> {
-                            _serverStatus.value = ServerStatus.STOPPED
                             _downloadProgress.value = null // Reset progress
                             notificationHelper.showNotification(
                                 NotificationHelper.CHANNEL_STATUS, 
@@ -402,7 +382,6 @@ class DashboardViewModel @Inject constructor(
                             )
                         }
                         WorkInfo.State.FAILED -> {
-                            _serverStatus.value = ServerStatus.STOPPED
                             _downloadProgress.value = null // Reset progress
                             val error = workInfo.outputData.getString("error") ?: "Worker FAILED (State: ${workInfo.state}, RunAttempt: ${workInfo.runAttemptCount})"
                             log("Installation failed: $error")
@@ -427,11 +406,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     private suspend fun startServer(server: MCServerEntity) {
-        _serverStatus.value = ServerStatus.STARTING
-
         serverManager.startServer(server)
-        
-        _serverStatus.value = ServerStatus.RUNNING
         
         // Single notification when server is actually online
         val notifyStatus = propertiesManager?.load()?.get("notifyStatus")?.toBoolean() ?: true
@@ -446,9 +421,7 @@ class DashboardViewModel @Inject constructor(
     }
     
     private suspend fun stopServer() {
-        _serverStatus.value = ServerStatus.STOPPING
         serverManager.stopServer(serverId)
-        _serverStatus.value = ServerStatus.STOPPED
         
         val notifyStatus = propertiesManager?.load()?.get("notifyStatus")?.toBoolean() ?: true
         if (notifyStatus) {
@@ -478,7 +451,6 @@ class DashboardViewModel @Inject constructor(
             }
                 
             try {
-                _serverStatus.value = ServerStatus.INSTALLING
                 val targetPath = server.uri ?: server.path
                 installer.downloadServer(downloadUrl, targetPath, targetFilename).collect { status ->
                     when (status) {
@@ -498,7 +470,6 @@ class DashboardViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                _serverStatus.value = ServerStatus.STOPPED
                 log("Auto-download failed: ${e.message}")
                 return false
             }
