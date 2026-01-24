@@ -228,9 +228,9 @@ class AiOrchestrator @Inject constructor(
 
     private fun writeFile(relPath: String, content: String, serverId: String, worldPath: String): String {
         return try {
-            // SECURITY: Allow .mcfunction and .json files
-            if (!relPath.endsWith(".mcfunction") && !relPath.endsWith(".json")) {
-                return "ERRO DE SEGURANÇA: A IA só tem permissão para modificar arquivos .mcfunction e .json. Modificações em '${File(relPath).name}' foram bloqueadas."
+            // SECURITY: Allow .mcfunction, .json and .mcmeta files
+            if (!relPath.endsWith(".mcfunction") && !relPath.endsWith(".json") && !relPath.endsWith(".mcmeta")) {
+                return "ERRO DE SEGURANÇA: A IA só tem permissão para modificar arquivos .mcfunction, .json e .mcmeta. Modificações em '${File(relPath).name}' foram bloqueadas."
             }
 
             // Write to SOURCE (Persistence)
