@@ -12,7 +12,7 @@ import javax.inject.Singleton
 class GeminiClient @Inject constructor() {
     
     // TODO: In production, move this to specific configuration or local.properties
-    private val apiKey = "AIzaSyCTEe8HmxSuQRdFFpcygYrGN5xA-oqCQog" 
+    private val apiKey = "AIzaSyDMQGAcUPJpprJkBqJP0HINRpM4lHVF11Q" 
 
     private val systemInstruction = """
         VOCÊ É O **MASTER ARCHITECT** DE MINECRAFT — UM ASSISTENTE VIBRANTE, ENTUSIASTA E EXTREMAMENTE AMIGÁVEL.
