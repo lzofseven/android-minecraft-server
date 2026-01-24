@@ -61,7 +61,7 @@ fun AiChatScreen(
 
     Scaffold(
         containerColor = BackgroundDark,
-        modifier = Modifier.imePadding(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0), // Disable default insets to handle them manually
         topBar = {
             TopAppBar(
                 title = {
@@ -84,6 +84,8 @@ fun AiChatScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .navigationBarsPadding() // Keep input above nav bar
+                .imePadding() // Keep input above keyboard
         ) {
             // Chat Area
             LazyColumn(

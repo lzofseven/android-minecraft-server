@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import com.lzofseven.mcserver.ui.navigation.NavGraph
@@ -84,7 +85,10 @@ class MainActivity : ComponentActivity() {
                      }
                 }
 
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0) // Key fix: don't let root scaffold consume insets
+                ) { innerPadding ->
                     NavGraph(modifier = Modifier.padding(innerPadding))
                 }
             }
