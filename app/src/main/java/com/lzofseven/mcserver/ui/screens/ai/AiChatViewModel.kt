@@ -44,6 +44,10 @@ class AiChatViewModel @Inject constructor(
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
+        if (_needsRconSetup.value) {
+            _errorMessage.value = "RCON necessário para usar a IA."
+            return
+        }
 
         val msgs = _messages.value.toMutableList()
         msgs.add(ChatMessage("user", text))

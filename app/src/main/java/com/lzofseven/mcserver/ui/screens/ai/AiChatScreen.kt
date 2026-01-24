@@ -108,11 +108,19 @@ fun AiChatScreen(
                 }
             }
 
-            // Input Area
-            ChatInput(
-                onSend = { viewModel.sendMessage(it) },
-                isLoading = isLoading
-            )
+            val needsRconSetup by viewModel.needsRconSetup.collectAsState()
+            
+            if (needsRconSetup) {
+                RconRequiredCard(
+                    onSetupClick = { viewModel.setupRcon() },
+                    isLoading = isLoading
+                )
+            } else {
+                ChatInput(
+                    onSend = { viewModel.sendMessage(it) },
+                    isLoading = isLoading
+                )
+            }
         }
 
         if (errorMessage != null) {
@@ -524,6 +532,59 @@ fun ChatInput(onSend: (String) -> Unit, isLoading: Boolean) {
                     tint = if (!isLoading && text.isNotBlank()) BackgroundDark else Color.White.copy(alpha = 0.2f),
                     modifier = Modifier.size(20.dp)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun RconRequiredCard(onSetupClick: () -> Unit, isLoading: Boolean) {
+    Surface(
+        color = Color.Red.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(24.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Red.copy(alpha = 0.2f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                Icons.Default.Error, 
+                null, 
+                tint = Color.Red, 
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "RCON REQUERIDO", 
+                style = MaterialTheme.typography.titleMedium, 
+                fontWeight = FontWeight.Black, 
+                color = Color.White
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "A IA precisa do protocolo RCON ativo para enviar comandos ao servidor Minecraft.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.6f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Spacer(Modifier.height(24.dp))
+            
+            Button(
+                onClick = onSetupClick,
+                enabled = !isLoading,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp)
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                } else {
+                    Text("CONFIGURAR AUTOMATICAMENTE", fontWeight = FontWeight.Bold, color = Color.White)
+                }
             }
         }
     }

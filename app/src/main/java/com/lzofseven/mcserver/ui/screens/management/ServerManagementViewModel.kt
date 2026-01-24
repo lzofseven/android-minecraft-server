@@ -203,7 +203,6 @@ class ServerManagementViewModel @Inject constructor(
                 "difficulty" to _difficulty.value,
                 "hardcore" to _hardcore.value.toString(),
                 "allow-nether" to _allowNether.value.toString(),
-                "allow-nether" to _allowNether.value.toString(),
                 "generate-structures" to _generateStructures.value.toString(),
                 "allow-flight" to _allowFlight.value.toString(),
                 "spawn-animals" to _spawnAnimals.value.toString(),
@@ -212,7 +211,15 @@ class ServerManagementViewModel @Inject constructor(
                 "simulation-distance" to _simulationDistance.value,
                 "white-list" to _whiteList.value.toString()
             ))
-            _uiEvent.emit(UiEvent.ShowToast("Alterações aplicadas com sucesso!"))
+
+            // CRITICAL FIX: If server is running, we MUST also update the execution directory 
+            // otherwise the sync on shutdown will overwrite our choices with the old ones.
+            val server = repository.getServerById(serverId)
+            if (server != null) {
+                serverManager.syncFileToExecutionDir(server.id, "server.properties")
+            }
+
+            _uiEvent.emit(UiEvent.ShowToast("Propriedades salvas!"))
         }
     }
 
