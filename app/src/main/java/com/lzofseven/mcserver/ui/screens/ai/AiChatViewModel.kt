@@ -13,17 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class ChatMessage(
-    val role: String, // "user" or "model" or "system" (for logs)
-    val content: String,
-    val isAction: Boolean = false,
-    val isOrchestrationLog: Boolean = false,
-    val actionStatuses: Map<Int, ActionStatus> = emptyMap()
-)
-
-enum class ActionStatus {
-    PENDING, EXECUTING, SUCCESS, ERROR
-}
+import com.lzofseven.mcserver.core.ai.ChatMessage
+import com.lzofseven.mcserver.core.ai.ActionStatus
 
 @HiltViewModel
 class AiChatViewModel @Inject constructor(
@@ -37,6 +28,9 @@ class AiChatViewModel @Inject constructor(
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+    
+    // Track current server ID to swap histories
+    private var currentServerId: String? = null
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -54,9 +48,12 @@ class AiChatViewModel @Inject constructor(
         val msgs = _messages.value.toMutableList()
         msgs.add(ChatMessage("user", text))
         _messages.value = msgs
-        _isLoading.value = true
-
+        
         viewModelScope.launch {
+            val serverId = serverManager.getActiveServerEntity()?.id ?: return@launch
+            orchestrator.addMessageToHistory(serverId, ChatMessage("user", text))
+            
+            _isLoading.value = true
             processRequest(text = text)
         }
     }
@@ -96,14 +93,12 @@ class AiChatViewModel @Inject constructor(
     private suspend fun handleOrchestrationStep(step: com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep, serverId: String) {
         when (step) {
             is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.LogMessage -> {
-                val current = _messages.value.toMutableList()
-                current.add(ChatMessage("system", step.message, isOrchestrationLog = true))
-                _messages.value = current
+                val msg = ChatMessage("system", step.message, isOrchestrationLog = true)
+                orchestrator.addMessageToHistory(serverId, msg)
             }
             is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.ToolExecuting -> {
-                val current = _messages.value.toMutableList()
-                current.add(ChatMessage("system", "🛠 Executando ${step.toolName}: ${step.args}", isOrchestrationLog = true))
-                _messages.value = current
+                val msg = ChatMessage("system", "🛠 Executando ${step.toolName}: ${step.args}", isOrchestrationLog = true)
+                orchestrator.addMessageToHistory(serverId, msg)
                 
                 if (step.toolName == "run_command") {
                     kotlinx.coroutines.delay(1000)
@@ -111,12 +106,12 @@ class AiChatViewModel @Inject constructor(
                 }
             }
             is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.FinalResponse -> {
-                val current = _messages.value.toMutableList()
-                current.add(ChatMessage("model", step.text))
-                _messages.value = current
+                val msg = ChatMessage("model", step.text)
+                orchestrator.addMessageToHistory(serverId, msg)
             }
         }
     }
+    
 
     private val _needsRconSetup = MutableStateFlow(false)
     val needsRconSetup: StateFlow<Boolean> = _needsRconSetup.asStateFlow()
@@ -166,6 +161,17 @@ class AiChatViewModel @Inject constructor(
     
     init {
         checkRcon()
+        observeHistory()
+    }
+
+    private fun observeHistory() {
+        viewModelScope.launch {
+            val server = serverManager.getActiveServerEntity() ?: return@launch
+            currentServerId = server.id
+            orchestrator.getChatHistoryFlow(server.id).collect {
+                _messages.value = it
+            }
+        }
     }
 
     private fun updateLastMessageStatus(actionIndex: Int, status: ActionStatus) {

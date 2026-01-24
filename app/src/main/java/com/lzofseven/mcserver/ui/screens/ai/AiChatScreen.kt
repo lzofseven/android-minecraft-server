@@ -38,6 +38,8 @@ import androidx.navigation.NavController
 import com.lzofseven.mcserver.ui.theme.BackgroundDark
 import com.lzofseven.mcserver.ui.theme.PrimaryDark
 import com.lzofseven.mcserver.ui.theme.SurfaceDark
+import com.lzofseven.mcserver.core.ai.ChatMessage
+import com.lzofseven.mcserver.core.ai.ActionStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +61,7 @@ fun AiChatScreen(
 
     Scaffold(
         containerColor = BackgroundDark,
+        modifier = Modifier.imePadding(),
         topBar = {
             TopAppBar(
                 title = {
@@ -90,7 +93,7 @@ fun AiChatScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
+                contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
             ) {
                 if (messages.isEmpty()) {
                     item {
@@ -109,18 +112,25 @@ fun AiChatScreen(
                 }
             }
 
-            val needsRconSetup by viewModel.needsRconSetup.collectAsState()
-            
-            if (needsRconSetup) {
-                RconRequiredCard(
-                    onSetupClick = { viewModel.setupRcon() },
-                    isLoading = isLoading
-                )
-            } else {
-                ChatInput(
-                    onSend = { viewModel.sendMessage(it) },
-                    isLoading = isLoading
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(BackgroundDark)
+                    .padding(bottom = 8.dp)
+            ) {
+                val needsRconSetup by viewModel.needsRconSetup.collectAsState()
+                
+                if (needsRconSetup) {
+                    RconRequiredCard(
+                        onSetupClick = { viewModel.setupRcon() },
+                        isLoading = isLoading
+                    )
+                } else {
+                    ChatInput(
+                        onSend = { viewModel.sendMessage(it) },
+                        isLoading = isLoading
+                    )
+                }
             }
         }
 

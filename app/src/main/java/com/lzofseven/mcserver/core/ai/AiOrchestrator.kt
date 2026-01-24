@@ -15,11 +15,22 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+
+data class ChatMessage(
+    val role: String, // "user" or "model" or "system" (for logs)
+    val content: String,
+    val isAction: Boolean = false,
+    val isOrchestrationLog: Boolean = false,
+    val actionStatuses: Map<Int, ActionStatus> = emptyMap()
+)
+
+enum class ActionStatus {
+    PENDING, EXECUTING, SUCCESS, ERROR
+}
 
 @Singleton
 class AiOrchestrator @Inject constructor(
@@ -37,8 +48,30 @@ class AiOrchestrator @Inject constructor(
         data class FinalResponse(val text: String) : OrchestrationStep()
     }
 
-    // Map to hold persistent chat sessions per server
+    // Map to hold persistent chat sessions and message history per server
     private val chatSessions = java.util.concurrent.ConcurrentHashMap<String, com.google.ai.client.generativeai.Chat>()
+    private val _chatHistories = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.flow.MutableStateFlow<List<ChatMessage>>>()
+
+    fun getChatHistoryFlow(serverId: String): kotlinx.coroutines.flow.StateFlow<List<ChatMessage>> {
+        return _chatHistories.getOrPut(serverId) { kotlinx.coroutines.flow.MutableStateFlow(emptyList()) }.asStateFlow()
+    }
+
+    fun addMessageToHistory(serverId: String, message: ChatMessage) {
+        val flow = _chatHistories.getOrPut(serverId) { kotlinx.coroutines.flow.MutableStateFlow(emptyList()) }
+        flow.value = flow.value + message
+    }
+
+    fun updateLastMessageStatus(serverId: String, actionIndex: Int, status: ActionStatus) {
+        val flow = _chatHistories[serverId] ?: return
+        val currentList = flow.value.toMutableList()
+        if (currentList.isNotEmpty()) {
+            val lastMsg = currentList.last()
+            val newStatuses = lastMsg.actionStatuses.toMutableMap()
+            newStatuses[actionIndex] = status
+            currentList[currentList.lastIndex] = lastMsg.copy(actionStatuses = newStatuses)
+            flow.value = currentList
+        }
+    }
 
     suspend fun processUserRequest(
         text: String, 
