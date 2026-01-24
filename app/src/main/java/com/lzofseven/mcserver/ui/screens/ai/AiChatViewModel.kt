@@ -32,14 +32,8 @@ class AiChatViewModel @Inject constructor(
     private val commandExecutor: AiCommandExecutor,
     private val serverManager: RealServerManager,
     private val contextManager: com.lzofseven.mcserver.core.ai.AiContextManager,
-    private val constructionDao: com.lzofseven.mcserver.data.local.dao.AiConstructionDao,
-    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
+    private val constructionDao: com.lzofseven.mcserver.data.local.dao.AiConstructionDao
 ) : ViewModel() {
-
-    private val audioRecorder = com.lzofseven.mcserver.util.AudioRecorder(context)
-
-    private val _isRecording = MutableStateFlow(false)
-    val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -49,33 +43,6 @@ class AiChatViewModel @Inject constructor(
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
-
-    fun startRecording() {
-        if (_isLoading.value) return
-        _isRecording.value = true
-        audioRecorder.startRecording()
-    }
-
-    fun stopAndSendAudio() {
-        if (!_isRecording.value) return
-        _isRecording.value = false
-        val audioBytes = audioRecorder.stopRecording()
-        
-        if (audioBytes != null && audioBytes.isNotEmpty()) {
-            sendAudioRequest(audioBytes)
-        }
-    }
-
-    private fun sendAudioRequest(audioBytes: ByteArray) {
-        val msgs = _messages.value.toMutableList()
-        msgs.add(ChatMessage("user", "🎤 Mensagem de áudio", isOrchestrationLog = false))
-        _messages.value = msgs
-        _isLoading.value = true
-
-        viewModelScope.launch {
-            processRequest(text = "O usuário enviou um áudio. Processe o comando contido nele.", audioBytes = audioBytes)
-        }
-    }
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
@@ -90,11 +57,11 @@ class AiChatViewModel @Inject constructor(
         _isLoading.value = true
 
         viewModelScope.launch {
-            processRequest(text = text, audioBytes = null)
+            processRequest(text = text)
         }
     }
 
-    private suspend fun processRequest(text: String, audioBytes: ByteArray?) {
+    private suspend fun processRequest(text: String) {
         try {
             val activeServer = serverManager.getActiveServerEntity()
             if (activeServer == null) {
@@ -116,7 +83,7 @@ class AiChatViewModel @Inject constructor(
 
             val contextStr = contextManager.getComprehensiveContext(activeServer.id)
 
-            orchestrator.processUserRequest(text, contextStr, activeServer.id, decodedPath, audioBytes).collect { step ->
+            orchestrator.processUserRequest(text, contextStr, activeServer.id, decodedPath).collect { step ->
                 handleOrchestrationStep(step, activeServer.id)
             }
         } catch (e: Exception) {

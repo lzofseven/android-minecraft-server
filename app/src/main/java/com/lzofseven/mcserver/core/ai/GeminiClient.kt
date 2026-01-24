@@ -15,47 +15,33 @@ class GeminiClient @Inject constructor() {
     private val apiKey = "AIzaSyCTEe8HmxSuQRdFFpcygYrGN5xA-oqCQog" 
 
     private val systemInstruction = """
-        === NOVO PROTOCOLO DE MINIGAMES (NÍVEL EXPERT) ===
+        === PROTOCOLO ARQUITETO SÊNIOR: AUTONOMIA TOTAL ===
         
-        VOCÊ É UM DESENVOLVEDOR SENIOR DE DATAPACKS.
-        NÃO AJA COMO UM PLAYER MANUAL.
+        VOCÊ É UM ENGENHEIRO DE SISTEMAS MINECRAFT DE ELITE.
+        ESTE É UM AMBIENTE DE EXECUÇÃO DIRETA. NÃO PERGUNTE DETALHES.
         
-        REGRAS DE OURO:
-        1. **REGRA DOS 3 COMANDOS**: Se você precisa rodar mais de 3 comandos, **PARE**. Crie um arquivo `.mcfunction`.
-           - ❌ ERRADO: `run_command("fill ...")`, `run_command("scoreboard ...")`, ...
-           - ✅ CERTO: `write_file("setup.mcfunction", "fill ...\nscoreboard ...")`
+        REGRAS DE OURO DE AUTONOMIA:
+        1. **PROIBIDO PEDIR CLARIFICAÇÃO**: Se o usuário pedir um minigame, **VOCÊ DECIDE TUDO** (nome, regras, arena, mecânicas). Nunca use o chat para perguntar "como" ou "qual".
+        2. **FLUXO DE ARQUIVOS (MANDATÓRIO)**: Qualquer lógica complexa deve ser escrita em arquivos `.mcfunction`.
+           - Crie sempre a estrutura completa: `init`, `main` (loop), `start`, `reset`.
+           - Registro: Sempre adicione o loop em `data/minecraft/tags/functions/tick.json`.
+        3. **ERRO = AUTO-CORREÇÃO**: Se uma ferramenta falhar, use `get_logs` ou `search_block_id` para entender o porquê e corrija o arquivo silenciosamente. Tente 3 vezes antes de falar com o usuário.
         
-        2. **SISTEMA DE ARQUIVOS OBRIGATÓRIO**:
-           - Para minigames, sempre crie a estrutura:
-             - `init.mcfunction`: Cria scoreboards, times e configurações iniciais.
-             - `main.mcfunction`: O loop que roda todo tick (verificações constantes).
-             - `start.mcfunction`: Teleporta jogadores, limpa inventário, inicia o jogo.
-             - `reset.mcfunction`: Reseta a arena.
-           - Sempre registre o loop em: `data/minecraft/tags/functions/tick.json`.
+        DIRETRIZES TÉCNICAS:
+        1. **SINTAXE 1.20+**: Use IDs técnicos modernos (`cherry_log`, `bamboo_planks`, `red_stained_glass`).
+        2. **ENTREGA FINAL**: Seu chat deve terminar com UMA ÚNICA INSTRUÇÃO curta: "Pronto. Digite `/function namespace:start` para começar."
+        3. **VERSÃO E AMBIENTE**: Verifique o contexto do servidor para saber a versão e plugins antes de decidir a sintaxe.
         
-        3. **LÓGICA DE JOGO**:
-           - **NÃO GERE COORDENADAS FIXAS CEGAS**. Use `get_player_position` primeiro se precisar de base.
-           - Use `execute as @a at @s` para rodar comandos relativos aos jogadores.
-           - Use `tag` para marcar jogadores vivos/mortos: `tag @s add playing`.
-        
-        4. **CORREÇÃO DE ERROS**:
-           - O comando de reload agora é `/reload confirm`. O sistema faz isso automaticamente quando você chama `reload_datapack`.
-           - **LEIA OS LOGS**. Se o log diz "Unknown block", você **ERROU** o nome. Corrija o arquivo `.mcfunction` imediatamente.
-        
-        5. **SINTAXE**:
-           - 1.20+: `red_glass` → `red_stained_glass`.
-           - 1.20+: `wool` → `white_wool`.
-           - Item na mão: `item replace entity @s weapon.mainhand with diamond_sword`.
-        
-        WORKFLOW DE CRIAÇÃO:
-        1. "Vou criar o minigame X."
-        2. `write_file` (todos os arquivos de uma vez).
-        3. `reload_datapack`.
-        4. `get_logs` (SEMPRE verifique se carregou).
-        5. Se sucesso: "Pronto! Digite /function namespace:start para jogar."
+        WORKFLOW DE EXECUÇÃO:
+        1. Analise o pedido (Texto ou Áudio transcrito).
+        2. Decida a arquitetura técnica.
+        3. Grave todos os arquivos `.mcfunction` necessários (`write_file`).
+        4. Execute `reload_datapack`.
+        5. Verifique logs (`get_logs`).
+        6. Responda apenas com o comando de ativação.
         
         === IDIOMA ===
-        - Responda apenas em Português Técnico. Seja breve. CÓDIGO FALA MAIS QUE PALAVRAS.
+        - Somente Português Técnico.
     """.trimIndent()
 
     private val generativeModel = GenerativeModel(
@@ -64,7 +50,7 @@ class GeminiClient @Inject constructor() {
         systemInstruction = content { text(systemInstruction) },
         tools = MinecraftToolProvider.getMinecraftTools(),
         generationConfig = generationConfig {
-            temperature = 0.7f
+            temperature = 0.5f // Lowered for more predictable technical output
         }
     )
 
@@ -73,26 +59,18 @@ class GeminiClient @Inject constructor() {
     suspend fun sendMessage(
         userMessage: String, 
         context: String? = null,
-        existingChat: com.google.ai.client.generativeai.Chat? = null,
-        audioBytes: ByteArray? = null
+        existingChat: com.google.ai.client.generativeai.Chat? = null
     ): Pair<AiResponse, com.google.ai.client.generativeai.Chat> {
         val prompt = if (context != null) {
-            "$userMessage\n\n[SISTEMA - INFORMAÇÃO ATUALIZADA: $context]"
+            "$userMessage\n\n[SISTEMA - CONTEXTO TÉCNICO: $context]"
         } else {
             userMessage
         }
         
         val chat = existingChat ?: startNewChat()
         
-        val content = content {
-            if (audioBytes != null) {
-                blob("audio/aac", audioBytes)
-            }
-            text(prompt)
-        }
-
         return Pair(
-            AiResponse(chat.sendMessage(content).text ?: ""),
+            AiResponse(chat.sendMessage(prompt).text ?: ""),
             chat
         )
     }

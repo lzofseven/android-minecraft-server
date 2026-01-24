@@ -44,38 +44,32 @@ class AiOrchestrator @Inject constructor(
         text: String, 
         context: String?,
         serverId: String, 
-        worldPath: String,
-        audioBytes: ByteArray? = null
+        worldPath: String
     ): Flow<OrchestrationStep> = flow {
         
         try {
-            kotlinx.coroutines.withTimeout(120_000) { // 2 minute max timeout
+            kotlinx.coroutines.withTimeout(180_000) { // Increased to 3 min for complex multi-file tasks
                 // Retrieve existing chat or start new one
                 val existingChat = chatSessions[serverId]
                 
                 val fullMessage = if (existingChat == null && context != null) {
-                     "[CONTEXTO INICIAL DO MUNDO]: $context\n\n$text"
+                     "[CONTEXTO TÉCNICO INICIAL]: $context\n\n$text"
                 } else if (context != null) {
                      "$text"
                 } else {
                     text
                 }
 
-                // Send message logic manually to keep Control
+                // Send message logic manually to keep Control and emit progress
                 var currentChat = existingChat ?: geminiClient.startNewChat()
                 chatSessions[serverId] = currentChat
                 
-                var apiResponse = currentChat.sendMessage(
-                    content {
-                        if (audioBytes != null) {
-                            blob("audio/aac", audioBytes)
-                        }
-                        text(fullMessage)
-                    }
-                )
+                // We use raw sendMessage here to manually handle the function calling loop
+                // this allows us to emit OrchestrationStep.ToolExecuting for UI feedback
+                var apiResponse = currentChat.sendMessage(fullMessage)
                 
                 var iterations = 0
-                val maxIterations = 10
+                val maxIterations = 15 // Increased for complex autonomous architecture
                 
                 // Loop for Function Calling
                 while (iterations < maxIterations && apiResponse.candidates.firstOrNull()?.content?.parts?.any { it is com.google.ai.client.generativeai.type.FunctionCallPart } == true) {
@@ -86,20 +80,16 @@ class AiOrchestrator @Inject constructor(
                     
                     for (call in functionCalls) {
                         emit(OrchestrationStep.ToolExecuting(call.name, call.args))
-                        android.util.Log.d("AiOrchestrator", "======== log de depuração ======== : Starting Tool ${call.name} with args: ${call.args}")
-                        
                         val result = executeTool(call.name, call.args, serverId, worldPath)
-                        android.util.Log.d("AiOrchestrator", "======== log de depuração ======== : Tool Result for ${call.name}: $result")
-                        
                         toolResults.add(com.google.ai.client.generativeai.type.FunctionResponsePart(call.name, org.json.JSONObject(mapOf("result" to result))))
                     }
                     
-                    // Send back the results
+                    // Send back the results to continue reasoning
                     apiResponse = currentChat.sendMessage(com.google.ai.client.generativeai.type.Content(role = "user", parts = toolResults))
                 }
                 
                 if (iterations >= maxIterations) {
-                    emit(OrchestrationStep.LogMessage("Limite de iterações atingido. Finalizando..."))
+                     emit(OrchestrationStep.LogMessage("Parei para evitar loop infinito. Verifique o progresso."))
                 }
 
                 val finalResult = apiResponse.text ?: "O robô concluiu as tarefas."
@@ -517,7 +507,30 @@ class AiOrchestrator @Inject constructor(
         "barreira" to "barrier",
         "ar" to "air",
         "água" to "water",
-        "lava" to "lava"
+        "lava" to "lava",
+        
+        // Novos blocos solicitados e comuns
+        "neve" to "snow_block",
+        "bloco de neve" to "snow_block",
+        "snow block" to "snow_block",
+        "gelo" to "ice",
+        "gelo compactado" to "packed_ice",
+        "gelo azul" to "blue_ice",
+        "tnt" to "tnt",
+        "dinamite" to "tnt",
+        "tocha" to "torch",
+        "lanterna" to "lantern",
+        "baú" to "chest",
+        "bancada" to "crafting_table",
+        "fornalha" to "furnace",
+        "escada" to "ladder",
+        "vidro" to "glass",
+        "painel de vidro" to "glass_pane",
+        "pedregulho" to "cobblestone",
+        "musgo" to "moss_block",
+        "folhas" to "oak_leaves",
+        "tronco" to "oak_log",
+        "tabua" to "oak_planks"
     )
 
     private fun searchBlockId(query: String): String {

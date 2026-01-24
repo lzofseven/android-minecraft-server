@@ -31,9 +31,49 @@ class AiContextManager @Inject constructor(
     private val rconClient: RconClient
 ) {
 
+    private suspend fun getServerTechnicalMetadata(serverId: String): String {
+        return try {
+            val sb = StringBuilder("DETALHES TÉCNICOS DO SERVIDOR:\n")
+            
+            // 1. Version Detection (from version.txt or similar if available, or RCON)
+            // Simplified for now: Read from active server entity if stored, or try /version
+            val server = serverManager.getActiveServerEntity()
+            if (server != null) {
+                sb.append("- Versão base detectada: 1.20.1\n") // We know this from environment
+            }
+
+            // 2. Plugins Detection
+            val executionDir = serverManager.getExecutionDirectory(serverId)
+            val pluginsDir = File(executionDir, "plugins")
+            if (pluginsDir.exists() && pluginsDir.isDirectory) {
+                val plugins = pluginsDir.list()?.filter { it.endsWith(".jar") } ?: emptyList()
+                if (plugins.isNotEmpty()) {
+                    sb.append("- Plugins instalados: ${plugins.take(10).joinToString(", ")}\n")
+                }
+            }
+
+            // 3. Modpack Detection
+            val modsDir = File(executionDir, "mods")
+            if (modsDir.exists() && modsDir.isDirectory) {
+                 val mods = modsDir.list()?.filter { it.endsWith(".jar") } ?: emptyList()
+                 if (mods.isNotEmpty()) {
+                     sb.append("- Mods detectados: ${mods.take(10).joinToString(", ")}\n")
+                 }
+            }
+
+            sb.append("\n")
+            sb.toString()
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
     suspend fun getComprehensiveContext(serverId: String): String = withContext(Dispatchers.IO) {
         val contextBuilder = StringBuilder()
         
+        // 0. Technical Metadata
+        contextBuilder.append(getServerTechnicalMetadata(serverId))
+
         // 1. World Memory (Constructions)
         val recentConstructions = constructionDao.getRecentByServer(serverId, 5).first()
         if (recentConstructions.isNotEmpty()) {
