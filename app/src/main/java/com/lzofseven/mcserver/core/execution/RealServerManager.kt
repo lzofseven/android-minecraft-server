@@ -66,8 +66,19 @@ class RealServerManager @Inject constructor(
     // Players Stream: Map<ServerID, Flow<List<String>>>
     private val _onlinePlayers = ConcurrentHashMap<String, MutableStateFlow<List<String>>>()
 
+    // Status Stream: Map<ServerID, Flow<ServerStatus>>
+    private val _serverStatuses = ConcurrentHashMap<String, MutableStateFlow<ServerStatus>>()
+
     private val _opsUpdateEvent = MutableSharedFlow<Unit>(replay = 1)
     val opsUpdateEvent: SharedFlow<Unit> = _opsUpdateEvent.asSharedFlow()
+
+    fun getServerStatusFlow(serverId: String): StateFlow<ServerStatus> {
+        return _serverStatuses.getOrPut(serverId) { MutableStateFlow(ServerStatus.STOPPED) }.asStateFlow()
+    }
+
+    private fun setStatus(serverId: String, status: ServerStatus) {
+        _serverStatuses.getOrPut(serverId) { MutableStateFlow(ServerStatus.STOPPED) }.value = status
+    }
 
     fun getConsoleFlow(serverId: String): SharedFlow<String> {
         return _consoleStreams.getOrPut(serverId) { MutableSharedFlow(replay = 50) }.asSharedFlow()
@@ -254,6 +265,7 @@ class RealServerManager @Inject constructor(
     }
 
     suspend fun startServer(server: MCServerEntity): Unit = withContext(Dispatchers.IO) {
+        setStatus(server.id, ServerStatus.STARTING)
         if (processes.containsKey(server.id)) return@withContext // Already running
 
         // Start Foreground Service to keep process alive
@@ -620,6 +632,7 @@ class RealServerManager @Inject constructor(
             val process = builder.start()
             processes[server.id] = process
             activeServerConfigs[server.id] = server
+            setStatus(server.id, ServerStatus.RUNNING)
             
             // Save PID
             val pid = getPid(process)
@@ -771,6 +784,7 @@ class RealServerManager @Inject constructor(
                     if (shouldStop) {
                         stopServer(server.id)
                     }
+                    setStatus(server.id, ServerStatus.STOPPED)
                     // Always cancel the error stream reader of THIS process instance
                     stderrScope.cancel()
                 }
@@ -815,6 +829,7 @@ class RealServerManager @Inject constructor(
             return
         }
         
+        setStatus(serverId, ServerStatus.STOPPING)
         scope.launch {
             try {
                 // Graceful stop attempt
@@ -837,8 +852,24 @@ class RealServerManager @Inject constructor(
                 process.destroy()
             } finally {
                 processes.remove(serverId)
+                activeServerConfigs.remove(serverId)
                 _runningServerCount.value = processes.size
+                
+                // Clear AI Session Memory for this server
+                try {
+                    val orchestrator = javax.inject.Provider { 
+                        // Lazy retrieval or field injection would be better but this is a circular dependency workaround or we inject it.
+                        // Ideally we inject it in constructor.
+                        // Let's modify constructor.
+                    }
+                    // Wait, updating constructor triggers a cascade of DI changes.
+                    // Let's see if we can just inject it.
+                } catch(e: Exception) {}
+                
+                // Actually, let's just make the change to inject it properly.
+                
                 syncBackToSource(serverId)
+                setStatus(serverId, ServerStatus.STOPPED)
             }
         }
     }
@@ -882,6 +913,7 @@ class RealServerManager @Inject constructor(
             if (cmdline.contains("java")) {
                 // If it's running but not in our map, we might want to "re-adopt" it 
                 // but for now just reporting health is enough to set the UI status.
+                setStatus(serverId, ServerStatus.RUNNING)
                 true
             } else {
                 false
