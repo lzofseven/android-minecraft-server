@@ -35,15 +35,22 @@ class AiContextManager @Inject constructor(
         return try {
             val sb = StringBuilder("DETALHES TÉCNICOS DO SERVIDOR:\n")
             
-            // 1. Version Detection (from version.txt or similar if available, or RCON)
-            // Simplified for now: Read from active server entity if stored, or try /version
+            // 1. World/Level Detection
+            val executionDir = serverManager.getExecutionDirectory(serverId)
+            val props = File(executionDir, "server.properties")
+            val worldName = if (props.exists()) {
+                val levelLine = props.readLines().find { it.startsWith("level-name=") }
+                levelLine?.substringAfter("=") ?: "world"
+            } else "world"
+            sb.append("- Pasta do Mundo: $worldName (Datapacks em $worldName/datapacks/)\n")
+
+            // 2. Version Detection
             val server = serverManager.getActiveServerEntity()
             if (server != null) {
-                sb.append("- Versão base detectada: 1.20.1\n") // We know this from environment
+                sb.append("- Versão base detectada: 1.20.1\n") 
             }
 
-            // 2. Plugins Detection
-            val executionDir = serverManager.getExecutionDirectory(serverId)
+            // 3. Plugins Detection
             val pluginsDir = File(executionDir, "plugins")
             if (pluginsDir.exists() && pluginsDir.isDirectory) {
                 val plugins = pluginsDir.list()?.filter { it.endsWith(".jar") } ?: emptyList()
@@ -52,7 +59,7 @@ class AiContextManager @Inject constructor(
                 }
             }
 
-            // 3. Modpack Detection
+            // 4. Modpack Detection
             val modsDir = File(executionDir, "mods")
             if (modsDir.exists() && modsDir.isDirectory) {
                  val mods = modsDir.list()?.filter { it.endsWith(".jar") } ?: emptyList()
