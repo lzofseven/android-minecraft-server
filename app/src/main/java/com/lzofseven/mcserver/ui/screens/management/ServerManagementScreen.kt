@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Launch
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -81,6 +83,9 @@ fun ServerManagementScreen(
 
     val viewDistance by viewModel.viewDistance.collectAsState()
     val simulationDistance by viewModel.simulationDistance.collectAsState()
+
+    val javaVersion by viewModel.javaVersion.collectAsState()
+    val autoStart by viewModel.autoStart.collectAsState()
 
     Scaffold(
         containerColor = BackgroundDark,
@@ -251,10 +256,10 @@ fun ServerManagementScreen(
                 Spacer(Modifier.height(12.dp))
 
                 ManagementToggle(
-                    title = "Verificação de Conta",
-                    desc = "Modo Online (Exigir conta oficial) - Reinício necessário",
-                    checked = onlineMode,
-                    onCheckedChange = { viewModel.setOnlineMode(it) }
+                    title = "Modo Pirata (Cracked)",
+                    desc = "Permitir jogadores sem conta oficial",
+                    checked = !onlineMode,
+                    onCheckedChange = { viewModel.setOnlineMode(!it) }
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -506,6 +511,41 @@ fun ServerManagementScreen(
                         shape = RoundedCornerShape(16.dp),
                         colors = managementTextFieldColors(),
                         singleLine = true
+                    )
+                }
+            }
+
+            // System Section
+            ManagementSection(title = "SISTEMA", icon = Icons.Default.Terminal) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Java Version Selector
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SurfaceDark.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Versão do Java", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
+                            Spacer(Modifier.height(12.dp))
+                            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(11, 17, 21).forEach { ver ->
+                                    FilterChip(
+                                        selected = javaVersion == ver,
+                                        onClick = { viewModel.setJavaVersion(ver) },
+                                        label = { Text("Java $ver") },
+                                        colors = managementChipColors()
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // AutoStart Toggle
+                    ManagementToggle(
+                        title = "Início Automático",
+                        desc = "Iniciar este servidor assim que o app abrir",
+                        checked = autoStart,
+                        onCheckedChange = { viewModel.setAutoStart(it) }
                     )
                 }
             }

@@ -65,6 +65,14 @@ class CreateServerViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(onlineMode = enabled)
     }
 
+    fun updateJavaVersion(version: Int) {
+        _uiState.value = _uiState.value.copy(javaVersion = version)
+    }
+
+    fun updateAutoStart(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(autoStart = enabled)
+    }
+
     fun searchLibrary(query: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSearching = true)
@@ -164,7 +172,9 @@ class CreateServerViewModel @Inject constructor(
                 type = state.type.name,
                 path = state.path,
                 uri = uri,
-                ramAllocationMB = state.ramAllocation
+                ramAllocationMB = state.ramAllocation,
+                javaVersion = state.javaVersion,
+                autoStart = state.autoStart
             )
             repository.insertServer(newServer)
             
@@ -315,6 +325,8 @@ data class CreateServerState(
     val gameMode: String = "Survival",
     val difficulty: String = "Normal",
     val onlineMode: Boolean = false,
+    val javaVersion: Int = 17,
+    val autoStart: Boolean = false,
     val motd: String = "A Minecraft Server",
     val serverIconUri: android.net.Uri? = null,
     

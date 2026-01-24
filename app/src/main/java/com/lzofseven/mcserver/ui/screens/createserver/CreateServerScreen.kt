@@ -678,6 +678,60 @@ fun StepThree(state: CreateServerState, viewModel: CreateServerViewModel) {
             Spacer(Modifier.height(24.dp))
         }
 
+        // --- SYSTEM SETTINGS ---
+        item {
+            Text("Sistema", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(0.7f))
+            Spacer(Modifier.height(8.dp))
+            
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Java Version Selector
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(0.05f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Terminal, null, tint = PrimaryDark, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text("Versão do Java", style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(11, 17, 21).forEach { ver ->
+                                FilterChip(
+                                    selected = state.javaVersion == ver,
+                                    onClick = { viewModel.updateJavaVersion(ver) },
+                                    label = { Text("Java $ver") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = PrimaryDark.copy(alpha = 0.2f),
+                                        selectedLabelColor = PrimaryDark,
+                                        labelColor = Color.White.copy(0.7f),
+                                        containerColor = BackgroundDark
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        borderColor = if (state.javaVersion == ver) PrimaryDark else Color.White.copy(0.1f),
+                                        enabled = true,
+                                        selected = state.javaVersion == ver
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // AutoStart Toggle
+                ToggleCard(
+                    title = "Início Automático",
+                    subtitle = "Iniciar servidor ao abrir o app",
+                    icon = Icons.Default.Launch,
+                    checked = state.autoStart,
+                    onCheckedChange = { viewModel.updateAutoStart(it) }
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+
         // --- GAMEPLAY TOGGLES ---
         item {
             Text("Regras de Gameplay", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(0.7f))

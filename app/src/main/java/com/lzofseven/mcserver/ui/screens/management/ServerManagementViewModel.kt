@@ -85,6 +85,12 @@ class ServerManagementViewModel @Inject constructor(
 
     private val _whiteList = MutableStateFlow(false)
     val whiteList: StateFlow<Boolean> = _whiteList.asStateFlow()
+
+    private val _javaVersion = MutableStateFlow(17)
+    val javaVersion: StateFlow<Int> = _javaVersion.asStateFlow()
+
+    private val _autoStart = MutableStateFlow(false)
+    val autoStart: StateFlow<Boolean> = _autoStart.asStateFlow()
     
     private val _uiEvent = MutableSharedFlow<UiEvent>()
     val uiEvent = _uiEvent.asSharedFlow()
@@ -121,8 +127,12 @@ class ServerManagementViewModel @Inject constructor(
                 
                 _motd.value = (props["motd"] ?: "A Minecraft Server").replace('§', '&')
                 _maxPlayers.value = props["max-players"] ?: "20"
-                _onlineMode.value = props["online-mode"]?.toBoolean() ?: true
+                _onlineMode.value = props["online-mode"]?.toBoolean() ?: false // Default to false (cracked/pirata) is safer for local mobile servers
                 _gameMode.value = props["gamemode"] ?: "survival"
+                
+                // Load DB specific settings
+                _javaVersion.value = server.javaVersion
+                _autoStart.value = server.autoStart
 
                 _serverPort.value = props["server-port"] ?: "25565"
                 _serverIp.value = props["server-ip"] ?: ""
@@ -136,7 +146,6 @@ class ServerManagementViewModel @Inject constructor(
                 _pvp.value = props["pvp"]?.toBoolean() ?: true
                 _difficulty.value = props["difficulty"] ?: "normal"
                 _hardcore.value = props["hardcore"]?.toBoolean() ?: false
-                _allowNether.value = props["allow-nether"]?.toBoolean() ?: true
                 _allowNether.value = props["allow-nether"]?.toBoolean() ?: true
                 _generateStructures.value = props["generate-structures"]?.toBoolean() ?: true
                 _allowFlight.value = props["allow-flight"]?.toBoolean() ?: false
@@ -183,6 +192,8 @@ class ServerManagementViewModel @Inject constructor(
     fun setViewDistance(value: String) { _viewDistance.value = value }
     fun setSimulationDistance(value: String) { _simulationDistance.value = value }
     fun setWhiteList(value: Boolean) { _whiteList.value = value }
+    fun setJavaVersion(value: Int) { _javaVersion.value = value }
+    fun setAutoStart(value: Boolean) { _autoStart.value = value }
 
     fun saveProperties() {
         viewModelScope.launch {
@@ -216,6 +227,12 @@ class ServerManagementViewModel @Inject constructor(
             // otherwise the sync on shutdown will overwrite our choices with the old ones.
             val server = repository.getServerById(serverId)
             if (server != null) {
+                // Update DB entry specifically for Java and AutoStart
+                repository.updateServer(server.copy(
+                    javaVersion = _javaVersion.value,
+                    autoStart = _autoStart.value
+                ))
+                
                 serverManager.syncFileToExecutionDir(server.id, "server.properties")
             }
 
