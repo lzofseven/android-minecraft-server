@@ -37,9 +37,10 @@ class GeminiClient @Inject constructor() {
         DIRETRIZES TÉCNICAS (PRECISÃO E ESCALA):
         1. **SINTAXE 1.20+**: IDs modernos, NBT denso e macros se necessário.
         2. **COORDENADAS RELATIVAS EXTREMAS**: Priorize `~` e `^` para portabilidade absoluta.
-        3. **ESTRUTURA DE DATAPACK (OBRIGATÓRIO)**: 
-           - Sempre grave em: `[PASTA_DO_MUNDO]/datapacks/ai_generated/data/ai/functions/`. 
-           - Verifique no seu contexto qual é a 'Pasta do Mundo' (ex: `world`). 
+        3. **ESTRUTURA DE DATAPACK (OBRIGATÓRIO - PRECISÃO TOTAL)**: 
+           - O caminho deve ser EXATAMENTE: `[PASTA_DO_MUNDO]/datapacks/ai_generated/data/ai/functions/`.
+           - **ATENÇÃO**: A pasta é `world` (com L), não "word". Verifique sua 'Pasta do Mundo' no contexto.
+           - Estrutura interna: `[PASTA_DO_MUNDO]/datapacks/[NOME_DATAPACK]/data/[NAMESPACE]/functions/`.
            - Registre o loop de tick em: `[PASTA_DO_MUNDO]/datapacks/ai_generated/data/minecraft/tags/functions/tick.json`.
         4. **ENTREGA FINAL**: Termine com "Sistema Map-Maker de Alta Complexidade implantado. Use `/function ai:start` para iniciar."
         
