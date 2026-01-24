@@ -104,7 +104,15 @@ fun AiChatScreen(
                 }
                 
                 items(messages) { msg ->
-                    ChatBubble(message = msg)
+                    var visible by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) { visible = true }
+                    
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = visible,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically(initialOffsetY = { it / 2 })
+                    ) {
+                        ChatBubble(message = msg)
+                    }
                 }
                 
                 if (isLoading) {
@@ -121,6 +129,7 @@ fun AiChatScreen(
                     .padding(bottom = 8.dp)
             ) {
                 val needsRconSetup by viewModel.needsRconSetup.collectAsState()
+                var pendingText by remember { mutableStateOf("") }
                 
                 if (needsRconSetup) {
                     RconRequiredCard(
@@ -128,10 +137,17 @@ fun AiChatScreen(
                         isLoading = isLoading
                     )
                 } else {
-                    ChatInput(
-                        onSend = { viewModel.sendMessage(it) },
-                        isLoading = isLoading
-                    )
+                    Column {
+                        // Quick Suggestions
+                        QuickSuggestions(onSuggestionClick = { pendingText = it })
+                        
+                        ChatInput(
+                            onSend = { viewModel.sendMessage(it) },
+                            isLoading = isLoading,
+                            externalText = pendingText,
+                            onTextConsumed = { pendingText = "" }
+                        )
+                    }
                 }
             }
         }
@@ -469,6 +485,42 @@ fun parseMarkdown(text: String): androidx.compose.ui.text.AnnotatedString {
 }
 
 @Composable
+fun QuickSuggestions(onSuggestionClick: (String) -> Unit) {
+    val suggestions = listOf(
+        "🏗️ Construa uma pequena base",
+        "🎮 Iniciar jogo de Spleef",
+        "📂 Listar todas as funções",
+        "🧹 Limpar a arena",
+        "🛠️ Exibir logs do servidor",
+        "🌍 Qual minha posição?"
+    )
+
+    androidx.compose.foundation.lazy.LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(suggestions) { suggestion ->
+            Surface(
+                color = SurfaceDark,
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+                modifier = Modifier.clickable { onSuggestionClick(suggestion.substring(suggestion.indexOf(" ") + 1)) }
+            ) {
+                Text(
+                    text = suggestion,
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun LoadingBubble() {
     Box(
         modifier = Modifier.fillMaxWidth(),
@@ -492,8 +544,16 @@ fun LoadingBubble() {
 }
 
 @Composable
-fun ChatInput(onSend: (String) -> Unit, isLoading: Boolean) {
+fun ChatInput(onSend: (String) -> Unit, isLoading: Boolean, externalText: String = "", onTextConsumed: () -> Unit = {}) {
     var text by remember { mutableStateOf("") }
+    
+    // Sync with external suggestions
+    LaunchedEffect(externalText) {
+        if (externalText.isNotEmpty()) {
+            text = externalText
+            onTextConsumed()
+        }
+    }
 
     Surface(
         color = SurfaceDark,
