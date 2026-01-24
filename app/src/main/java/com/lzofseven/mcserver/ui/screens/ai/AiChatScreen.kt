@@ -187,32 +187,7 @@ fun ChatBubble(message: ChatMessage) {
         contentAlignment = alignment
     ) {
         if (message.isOrchestrationLog) {
-            // Specialized UI for Orchestration Steps (Planner/Coder/Debugger)
-            Surface(
-                color = Color.White.copy(alpha = 0.03f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .padding(vertical = 4.dp)
-                    .widthIn(max = 300.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryDark.copy(alpha = 0.2f))
-            ) {
-                Row(
-                   modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                   verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val icon = if (message.content.contains("🛠")) Icons.Default.Build 
-                              else if (message.content.contains("Arquiteto")) Icons.Default.AutoAwesome
-                              else Icons.Default.Terminal
-                    
-                    Icon(icon, null, tint = PrimaryDark, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = message.content,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.7f)
-                    )
-                }
-            }
+            ToolExecutionCard(message.content)
         } else if (isSystem) {
             // Traditional log message
             Text(
@@ -615,5 +590,121 @@ fun RconRequiredCard(onSetupClick: () -> Unit, isLoading: Boolean) {
                 }
             }
         }
+    }
+}
+
+@Composable
+fun ToolExecutionCard(rawContent: String) {
+    // Parse content: "🛠 Executando tool_name: {args}" OR "Log message"
+    val isTool = rawContent.contains("Executando")
+    val toolData = if (isTool) parseToolLogData(rawContent) else null
+    
+    val containerColor = if (isTool) Color(0xFF1E1E1E) else Color.Transparent
+    val borderColor = if (isTool) PrimaryDark.copy(alpha = 0.3f) else PrimaryDark.copy(alpha = 0.1f)
+    
+    Surface(
+        color = containerColor,
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor),
+        modifier = Modifier
+            .padding(vertical = 4.dp)
+            .fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            if (isTool && toolData != null) {
+                // Header: Icon + Tool Name
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = when(toolData.name) {
+                            "write_file" -> Icons.Default.Build
+                            "read_file", "list_files" -> Icons.Default.Terminal
+                            "run_command" -> Icons.Default.Terminal
+                            "get_logs" -> Icons.Default.Error
+                            else -> Icons.Default.Code
+                        },
+                        contentDescription = null,
+                        tint = PrimaryDark,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = toolData.name.replace("_", " ").uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryDark
+                    )
+                }
+                
+                Spacer(Modifier.height(8.dp))
+                
+                // Arguments List
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    toolData.args.forEach { (key, value) ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(
+                                text = "$key:", 
+                                style = MaterialTheme.typography.bodySmall, 
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                modifier = Modifier.width(60.dp)
+                            )
+                            Text(
+                                text = value, 
+                                style = MaterialTheme.typography.bodySmall, 
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Generic Log (Planner/Debugger thoughts)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (rawContent.contains("Arquiteto")) Icons.Default.AutoAwesome else Icons.Default.SmartToy,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = rawContent,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontStyle = FontStyle.Italic
+                    )
+                }
+            }
+        }
+    }
+}
+
+data class ToolInfo(val name: String, val args: Map<String, String>)
+
+fun parseToolLogData(log: String): ToolInfo? {
+    try {
+        // Format: "🛠 Executando tool_name: {arg1=val1, arg2=val2}"
+        val nameStart = log.indexOf("Executando ") + 11
+        val argsStart = log.indexOf(": {")
+        
+        if (nameStart < 11 || argsStart == -1) return null
+        
+        val name = log.substring(nameStart, argsStart).trim()
+        val argsRaw = log.substring(argsStart + 3, log.lastIndexOf("}"))
+        
+        // Simple manual csv parsing
+        val args = mutableMapOf<String, String>()
+        val parts = argsRaw.split(", ")
+        for (part in parts) {
+            val kv = part.split("=")
+            if (kv.size >= 2) {
+                args[kv[0]] = kv.drop(1).joinToString("=")
+            }
+        }
+        return ToolInfo(name, args)
+    } catch (e: Exception) {
+        return null
     }
 }

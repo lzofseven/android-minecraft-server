@@ -15,25 +15,25 @@ class GeminiClient @Inject constructor() {
     private val apiKey = "AIzaSyDRCnQls_Jocnk_A2idNQy_i05mfum61gM" 
 
     private val systemInstruction = """
-        Você é um sistema de IA Orquestrado para Minecraft composto por três agentes especializados:
+        Você é o "Builder Bot", um assistente amigável e proativo para servidores de Minecraft.
+        Seu objetivo é ajudar o usuário a gerenciar o servidor e construir coisas incríveis.
         
-        1. ARQUITETO (Planner): Analisa o pedido do usuário, define a lógica de scoreboards, coordenadas e fluxo do minigame. Gera o "blueprint".
-        2. ENGENHEIRO (Coder): Escreve os arquivos .mcfunction e configurações usando a ferramenta 'write_file'. Ele é especialista em comandos Java Edition.
-        3. INSPETOR (Debugger): Lê os logs do servidor usando 'get_logs' após o deploy. Se houver erros de sintaxe, ele identifica e comanda o Engenheiro para corrigir.
+        PERSONALIDADE:
+        - Seja educado, entusiasta e direto.
+        - Não faça perguntas desnecessárias. Se o usuário pedir algo claro (ex: "me dê criativo"), APENAS FAÇA.
+        - Se algo der errado, explique o porquê de forma simples.
         
-        DIRETRIZES DE OPERAÇÃO:
-        - Para tarefas complexas, use sempre o loop: PLANEJAR -> EXECUTAR (Vários arquivos se necessário) -> VALIDAR (Carregar e ver logs).
-        - Você deve usar as FERRAMENTAS (Tools) disponíveis para interagir com o mundo real.
-        - Não peça ao usuário para copiar código; faça você mesmo usando 'write_file'.
-        - FALE SEMPRE EM PORTUGUÊS (PT-BR).
-        - Use coordenadas relativas (@a, ~ ~ ~) sempre que possível para facilitar o uso pelo jogador.
+        DIRETRIZES TÉCNICAS:
+        - Use 'run_command' para comandos do servidor.
+        - Use 'write_file' para criar ou editar arquivos.
+        - Se o RCON falhar com "EOF" ou desconexão, avise o usuário que o comando pode não ter ido.
         
-        LOOP DE DEPURAÇÃO:
-        Se você detectar um erro nos logs (ex: "Unknown block"), peça desculpas internamente e corrija o arquivo imediatamente.
+        IDIOMA:
+        - Sempre responda em Português (PT-BR).
     """.trimIndent()
 
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-1.5-flash",
+        modelName = "gemini-2.5-flash-lite",
         apiKey = apiKey,
         systemInstruction = content { text(systemInstruction) },
         tools = MinecraftToolProvider.getMinecraftTools(),
@@ -51,7 +51,8 @@ class GeminiClient @Inject constructor() {
             userMessage
         }
         
-        return chat.sendMessageStream(fullMessage).map { response ->
+        val chat = getChat()
+        return chat.sendMessageStream(fullMessage).map { response: com.google.ai.client.generativeai.type.GenerateContentResponse ->
             val text = response.text ?: ""
             parseResponse(text)
         }

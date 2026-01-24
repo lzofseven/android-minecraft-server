@@ -13,49 +13,56 @@ object MinecraftToolProvider {
                     FunctionDeclaration(
                         name = "write_file",
                         description = "Cria ou sobrescreve um arquivo (ex: .mcfunction, pack.mcmeta) no diretório do servidor ou datapack.",
-                        parameters = mapOf(
-                            "path" to Schema.string("Caminho relativo ao mundo do servidor ou absoluto. Ex: 'datapacks/ai/data/ai/functions/test.mcfunction'"),
-                            "content" to Schema.string("Conteúdo completo do arquivo.")
-                        )
+                        parameters = listOf(
+                            Schema.str("path", "Caminho relativo ao mundo do servidor ou absoluto."),
+                            Schema.str("content", "Conteúdo completo do arquivo.")
+                        ),
+                        requiredParameters = listOf("path", "content")
                     ),
                     FunctionDeclaration(
                         name = "read_file",
                         description = "Lê o conteúdo de um arquivo existente para entender a lógica atual ou ler logs.",
-                        parameters = mapOf(
-                            "path" to Schema.string("Caminho do arquivo a ser lido.")
-                        )
+                        parameters = listOf(
+                            Schema.str("path", "Caminho do arquivo a ser lido.")
+                        ),
+                        requiredParameters = listOf("path")
                     ),
                     FunctionDeclaration(
                         name = "list_files",
                         description = "Lista arquivos em um diretório para entender a estrutura de pastas do servidor ou datapack.",
-                        parameters = mapOf(
-                            "path" to Schema.string("Diretório a ser listado.")
-                        )
+                        parameters = listOf(
+                            Schema.str("path", "Diretório a ser listado.")
+                        ),
+                        requiredParameters = listOf("path")
                     ),
                     FunctionDeclaration(
                         name = "run_command",
                         description = "Executa um comando de console no Minecraft via RCON.",
-                        parameters = mapOf(
-                            "command" to Schema.string("Comando sem a barra inicial. Ex: 'reload', 'say ola', 'tp @a 0 100 0'")
-                        )
+                        parameters = listOf(
+                            Schema.str("command", "Comando sem a barra inicial.")
+                        ),
+                        requiredParameters = listOf("command")
                     ),
                     FunctionDeclaration(
                         name = "get_logs",
-                        description = "Recupera as últimas linhas do log do servidor (latest.log) para depuração de erros de sintaxe ou execução.",
-                        parameters = emptyMap()
+                        description = "Recupera as últimas linhas do log do servidor (latest.log).",
+                        parameters = emptyList(),
+                        requiredParameters = emptyList()
                     ),
                     FunctionDeclaration(
                         name = "get_server_status",
-                        description = "Retorna informações sobre o status atual do servidor (Online/Offline, Jogadores, Versão).",
-                        parameters = emptyMap()
+                        description = "Retorna informações sobre o status atual do servidor.",
+                        parameters = emptyList(),
+                        requiredParameters = emptyList()
                     ),
                     FunctionDeclaration(
                         name = "extract_archive",
                         description = "Extrai um arquivo comprimido (.tar.gz, .zip) para uma pasta de destino.",
-                        parameters = mapOf(
-                            "path" to Schema.string("Caminho do arquivo comprimido."),
-                            "destination" to Schema.string("Pasta de destino para a extração.")
-                        )
+                        parameters = listOf(
+                            Schema.str("path", "Caminho do arquivo comprimido."),
+                            Schema.str("destination", "Pasta de destino para a extração.")
+                        ),
+                        requiredParameters = listOf("path", "destination")
                     )
                 )
             )

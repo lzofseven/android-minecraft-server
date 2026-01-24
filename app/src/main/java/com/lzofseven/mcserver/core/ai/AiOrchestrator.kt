@@ -61,9 +61,12 @@ class AiOrchestrator @Inject constructor(
             
             for (call in functionCalls) {
                 emit(OrchestrationStep.ToolExecuting(call.name, call.args))
+                android.util.Log.d("AiOrchestrator", "======== log de depuração ======== : Starting Tool ${call.name} with args: ${call.args}")
                 
                 val result = executeTool(call.name, call.args, serverId, worldPath)
-                toolResults.add(com.google.ai.client.generativeai.type.FunctionResponsePart(call.name, mapOf("result" to result)))
+                android.util.Log.d("AiOrchestrator", "======== log de depuração ======== : Tool Result for ${call.name}: $result")
+                
+                toolResults.add(com.google.ai.client.generativeai.type.FunctionResponsePart(call.name, org.json.JSONObject(mapOf("result" to result))))
             }
             
             // Log for the user
@@ -72,11 +75,9 @@ class AiOrchestrator @Inject constructor(
             }
 
             // Send back the results
-            response = chat.sendMessage(content { 
-                for (res in toolResults) {
-                    add(res)
-                }
-            })
+            // Send back the results (as "user" or "function" role, SDK 0.9.0 handles function responses usually as part of conversation history)
+            // We use direct Content constructor to avoid DSL issues
+            response = chat.sendMessage(com.google.ai.client.generativeai.type.Content(role = "user", parts = toolResults))
         }
         
         if (iterations >= maxIterations) {
@@ -335,14 +336,13 @@ class AiOrchestrator @Inject constructor(
 
     private suspend fun runCommand(command: String, serverId: String): String {
         return try {
-            val executionDir = serverManager.getExecutionDirectory(serverId)
-            val rconConfig = ServerPropertiesHelper.getRconConfig(executionDir.absolutePath)
-            if (!rconConfig.enabled) return "Erro: RCON desativado no servidor"
-            
-            val response = rconClient.sendCommand(rconConfig.password, command)
-            if (response.isBlank()) "Comando enviado (Sem resposta)" else response
+            // STDIN Fallback: Inject command directly to server process
+            // This bypasses RCON entirely, which has been unreliable (EOF issues).
+            android.util.Log.d("AiOrchestrator", "======== log de depuração ======== : Using STDIN to send: $command")
+            serverManager.sendCommand(serverId, command)
+            "Comando enviado via console."
         } catch (e: Exception) {
-            "Erro RCON: ${e.message}"
+            "Erro ao enviar comando: ${e.message}"
         }
     }
 

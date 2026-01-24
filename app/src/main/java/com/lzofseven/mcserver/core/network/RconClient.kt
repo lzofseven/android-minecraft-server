@@ -28,60 +28,71 @@ class RconClient @Inject constructor() {
     }
 
     suspend fun sendCommand(password: String, command: String): String = withContext(Dispatchers.IO) {
-        var socket: Socket? = null
-        try {
-            android.util.Log.d("RconClient", "Connecting to $host:$port...")
-            socket = Socket(host, port)
-            socket.soTimeout = 5000 // 5 seconds timeout
-            
-            val input = DataInputStream(socket.getInputStream())
-            val output = DataOutputStream(socket.getOutputStream())
-
-            // 1. Authenticate
-            val authId = requestId.getAndIncrement()
-            android.util.Log.d("RconClient", "Sending Auth Packet ID $authId")
-            writePacket(output, authId, SERVERDATA_AUTH, password)
-            
-            // Read Auth Response
-            while (true) {
-                val packet = readPacket(input)
+        var lastError: Exception? = null
+        
+        // Retry logic: 3 attempts with increasing delay
+        repeat(3) { attempt ->
+            var socket: Socket? = null
+            try {
+                if (attempt > 0) {
+                    android.util.Log.d("RconClient", "Retrying RCON connection (Attempt ${attempt + 1})...")
+                    kotlinx.coroutines.delay(500L * attempt)
+                }
                 
-                if (packet.type == SERVERDATA_AUTH_RESPONSE) {
-                    if (packet.id == -1) {
-                        throw Exception("RCON Authentication Failed. Check password.")
-                    }
-                    if (packet.id == authId) {
-                        break
+                android.util.Log.d("RconClient", "Connecting to $host:$port...")
+                socket = Socket(host, port)
+                socket.soTimeout = 5000 // 5 seconds timeout
+                
+                val input = DataInputStream(socket.getInputStream())
+                val output = DataOutputStream(socket.getOutputStream())
+
+                // 1. Authenticate
+                val authId = requestId.getAndIncrement()
+                android.util.Log.d("RconClient", "Sending Auth Packet ID $authId")
+                writePacket(output, authId, SERVERDATA_AUTH, password)
+                
+                // Read Auth Response
+                while (true) {
+                    val packet = readPacket(input)
+                    
+                    if (packet.type == SERVERDATA_AUTH_RESPONSE) {
+                        if (packet.id == -1) {
+                            throw Exception("RCON Authentication Failed. Check password.")
+                        }
+                        if (packet.id == authId) {
+                            break
+                        }
                     }
                 }
-            }
-            
-            // Give server a moment to settle state before command (Fixes immediate EOF on some Spigot/Paper versions)
-            kotlinx.coroutines.delay(200)
+                
+                // Give server a moment to settle state
+                // REMOVED DELAY: Some servers might timeout idle RCON quickly?
+                // kotlinx.coroutines.delay(200)
 
-            // 2. Execute Command
-            val cmdId = requestId.getAndIncrement()
-            android.util.Log.d("RconClient", "Sending Command Packet ID $cmdId: $command")
-            writePacket(output, cmdId, SERVERDATA_EXECCOMMAND, command)
-            
-            // Read Command Response
-            try {
-                val response = readPacket(input)
-                android.util.Log.d("RconClient", "Command Response: ${response.body}")
-                return@withContext response.body
-            } catch (e: java.io.EOFException) {
-                // Server closed connection immediately after command.
-                // This often counts as "Execution Success" but "No Output".
-                android.util.Log.w("RconClient", "Server closed connection during read (EOF). Assuming command executed.")
-                return@withContext "Command sent (Server closed connection)"
+                // 2. Execute Command
+                val cmdId = requestId.getAndIncrement()
+                android.util.Log.d("RconClient", "======== log de depuração ======== : RCON SEND [ID:$cmdId]: $command")
+                writePacket(output, cmdId, SERVERDATA_EXECCOMMAND, command)
+                
+                // Read Command Response
+                try {
+                    val response = readPacket(input)
+                    android.util.Log.d("RconClient", "======== log de depuração ======== : RCON RECV [ID:${response.id}]: ${response.body}")
+                    return@withContext response.body
+                } catch (e: java.io.EOFException) {
+                    // Server closed connection immediately.
+                    android.util.Log.w("RconClient", "Server closed connection during read (EOF).")
+                    return@withContext "Erro: O servidor desconectou antes de responder. O comando pode ter falhado."
+                }
+            } catch (e: Exception) {
+                lastError = e
+                android.util.Log.e("RconClient", "RCON Attempt ${attempt + 1} failed: ${e.message}")
+            } finally {
+                try { socket?.close() } catch (e: Exception) {}
             }
-
-        } catch (e: Exception) {
-            android.util.Log.e("RconClient", "RCON Error", e)
-            throw Exception("RCON Error: ${e.message}")
-        } finally {
-            try { socket?.close() } catch (e: Exception) {}
         }
+        
+        throw Exception("RCON Error after 3 attempts: ${lastError?.message}")
     }
 
     private fun writePacket(out: DataOutputStream, id: Int, type: Int, body: String) {

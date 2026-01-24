@@ -39,6 +39,11 @@ class RealServerManager @Inject constructor(
     fun getActiveServerEntity(): MCServerEntity? {
         return activeServerConfigs.values.firstOrNull()
     }
+
+    fun isServerRunning(serverId: String): Boolean {
+        val process = processes[serverId]
+        return process != null && if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) process.isAlive else try { process.exitValue(); false } catch(e: IllegalThreadStateException) { true }
+    }
     
     // HTTP client for JAR downloads
     private val serviceHttpClient = OkHttpClient.Builder()

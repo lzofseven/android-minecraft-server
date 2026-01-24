@@ -64,6 +64,12 @@ class AiChatViewModel @Inject constructor(
                     return@launch
                 }
 
+                if (!serverManager.isServerRunning(activeServer.id)) {
+                    _messages.value = _messages.value + ChatMessage("model", "O servidor parece estar offline. Preciso que ele esteja rodando para poder executar comandos ou verificar o status.")
+                    _isLoading.value = false
+                    return@launch
+                }
+
                 // Fix: Decode URL characters (e.g., %20 -> space)
                 val effectivePath = if (activeServer.path.startsWith("content://")) {
                     serverManager.getRealPathFromSaf(activeServer.path) ?: activeServer.path
