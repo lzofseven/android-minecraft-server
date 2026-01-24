@@ -126,15 +126,16 @@ fun ServerManagementScreen(
                 
                 val context = androidx.compose.ui.platform.LocalContext.current
                 LaunchedEffect(iconPath, iconUpdate) {
-                    if (iconPath != null) {
+                    val currentPath = iconPath
+                    if (currentPath != null) {
                         try {
-                            if (iconPath!!.startsWith("content://")) {
-                                val uri = android.net.Uri.parse(iconPath!!)
+                            if (currentPath.startsWith("content://")) {
+                                val uri = android.net.Uri.parse(currentPath)
                                 context.contentResolver.openInputStream(uri)?.use { stream ->
                                     iconBitmap = android.graphics.BitmapFactory.decodeStream(stream)
                                 }
                             } else {
-                                val file = java.io.File(iconPath!!)
+                                val file = java.io.File(currentPath)
                                 if (file.exists()) {
                                     iconBitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
                                 }
