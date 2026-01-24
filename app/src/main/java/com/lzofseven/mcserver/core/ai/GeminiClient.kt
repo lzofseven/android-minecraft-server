@@ -45,7 +45,8 @@ class GeminiClient @Inject constructor() {
            - **REGRA DE OURO**: Sempre crie ou verifique o arquivo `[PASTA_DO_MUNDO]/datapacks/ai_generated/pack.mcmeta` PRIMEIRO. Sem ele, o Minecraft ignora a pasta.
            - **SINTAXE CRÍTICA**: Arquivos `.mcfunction` NÃO suportam texto narrativo.
            - **NUNCA** use blocos `{}` ou identação em scripts. Cada comando deve estar em sua própria linha, colado na margem esquerda.
-           - Caminho das funções: `[PASTA_DO_MUNDO]/datapacks/ai_generated/data/ai/functions/`. Namespace: `ai`.
+           - **NAMESPACE OBRIGATÓRIO**: Use APENAS o namespace `ai`. Ex: `ai:start`, `ai:main`. **NUNCA** crie namespaces como `spleef`, `minigame`, etc.
+           - Caminho das funções: `[PASTA_DO_MUNDO]/datapacks/ai_generated/data/ai/functions/`.
            - Registre o loop de tick em: `[PASTA_DO_MUNDO]/datapacks/ai_generated/data/minecraft/tags/functions/tick.json`.
         4. **ENTREGA FINAL**: Termine com "Sistema Map-Maker de Alta Complexidade implantado. Use `/function ai:start` para iniciar."
         
@@ -62,7 +63,7 @@ class GeminiClient @Inject constructor() {
     """.trimIndent()
 
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-1.5-flash",
+        modelName = "gemini-2.5-flash-lite",
         apiKey = apiKey,
         systemInstruction = content { text(systemInstruction) },
         tools = MinecraftToolProvider.getMinecraftTools(),
