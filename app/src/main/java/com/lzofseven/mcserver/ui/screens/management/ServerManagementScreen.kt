@@ -88,7 +88,7 @@ fun ServerManagementScreen(
     val autoStart by viewModel.autoStart.collectAsState()
 
     val serverStatus by viewModel.serverStatus.collectAsState()
-    val serverEntity by viewModel.repository.getServerByIdFlow(viewModel.serverId).collectAsState(initial = null)
+    val serverEntity by viewModel.serverEntity.collectAsState()
 
     Scaffold(
         containerColor = BackgroundDark,
@@ -119,17 +119,17 @@ fun ServerManagementScreen(
         ) {
             // New Reactive Status Card
             serverEntity?.let { server ->
-                val motd by viewModel.motd.collectAsState()
-                val serverIconPath by viewModel.serverIconPath.collectAsState()
-                val serverIconUpdate by viewModel.serverIconUpdate.collectAsState()
+                val motdValue by viewModel.motd.collectAsState()
+                val serverIconPathValue by viewModel.serverIconPath.collectAsState()
+                val serverIconUpdateValue by viewModel.serverIconUpdate.collectAsState()
                 
                 com.lzofseven.mcserver.ui.screens.dashboard.HeroStatusCard(
                     serverStatus = serverStatus,
                     onToggle = { viewModel.toggleServer() },
                     serverName = server.name,
-                    motd = motd,
-                    serverIconPath = serverIconPath,
-                    iconUpdate = serverIconUpdate
+                    motd = motdValue,
+                    serverIconPath = serverIconPathValue,
+                    iconUpdate = serverIconUpdateValue
                 )
             }
 

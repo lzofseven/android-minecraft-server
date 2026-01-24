@@ -15,6 +15,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.lzofseven.mcserver.ui.screens.config.UiEvent
@@ -27,7 +29,10 @@ class ServerManagementViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    private val serverId: String = checkNotNull(savedStateHandle["serverId"])
+    val serverId: String = checkNotNull(savedStateHandle["serverId"])
+    
+    val serverEntity = repository.getServerByIdFlow(serverId)
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), null)
     
     private val _motd = MutableStateFlow("")
     val motd: StateFlow<String> = _motd.asStateFlow()

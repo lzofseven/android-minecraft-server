@@ -59,7 +59,7 @@ class GeminiClient @Inject constructor() {
     """.trimIndent()
 
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-1.5-flash",
+        modelName = "gemini-2.5-flash-lite",
         apiKey = apiKey,
         systemInstruction = content { text(systemInstruction) },
         tools = MinecraftToolProvider.getMinecraftTools(),
@@ -73,9 +73,10 @@ class GeminiClient @Inject constructor() {
     suspend fun sendMessage(
         userMessage: String, 
         context: String? = null,
-        existingChat: com.google.ai.client.generativeai.Chat? = null
+        existingChat: com.google.ai.client.generativeai.Chat? = null,
+        audioBytes: ByteArray? = null
     ): Pair<AiResponse, com.google.ai.client.generativeai.Chat> {
-        val fullMessage = if (context != null) {
+        val prompt = if (context != null) {
             "$userMessage\n\n[SISTEMA - INFORMAÇÃO ATUALIZADA: $context]"
         } else {
             userMessage
@@ -83,17 +84,15 @@ class GeminiClient @Inject constructor() {
         
         val chat = existingChat ?: startNewChat()
         
-        // We use map to process the stream, but for simplicity in orchestration we will collect the flow here or return the flow.
-        // To keep memory simple, let's return the chat object along with the response flow.
-        // However, the current signature returns Flow<AiResponse>. 
-        // Let's change to return the Flow directly from the chat.
-        
-        // Problem: We need to return the Chat object to the caller (Orchestrator) so it can save it.
-        // But Flow is async. 
-        // Let's simplifiy: helper function returns the Flow, and the caller manages the Chat instance.
-        
+        val content = content {
+            if (audioBytes != null) {
+                blob("audio/aac", audioBytes)
+            }
+            text(prompt)
+        }
+
         return Pair(
-            AiResponse(chat.sendMessage(fullMessage).text ?: ""),
+            AiResponse(chat.sendMessage(content).text ?: ""),
             chat
         )
     }

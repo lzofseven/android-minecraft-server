@@ -44,13 +44,12 @@ class AiOrchestrator @Inject constructor(
         text: String, 
         context: String?,
         serverId: String, 
-        worldPath: String
+        worldPath: String,
+        audioBytes: ByteArray? = null
     ): Flow<OrchestrationStep> = flow {
         
         try {
             kotlinx.coroutines.withTimeout(120_000) { // 2 minute max timeout
-                emit(OrchestrationStep.LogMessage("Analisando solicitação e planejando ações..."))
-                
                 // Retrieve existing chat or start new one
                 val existingChat = chatSessions[serverId]
                 
@@ -66,7 +65,14 @@ class AiOrchestrator @Inject constructor(
                 var currentChat = existingChat ?: geminiClient.startNewChat()
                 chatSessions[serverId] = currentChat
                 
-                var apiResponse = currentChat.sendMessage(fullMessage)
+                var apiResponse = currentChat.sendMessage(
+                    content {
+                        if (audioBytes != null) {
+                            blob("audio/aac", audioBytes)
+                        }
+                        text(fullMessage)
+                    }
+                )
                 
                 var iterations = 0
                 val maxIterations = 10
@@ -88,11 +94,6 @@ class AiOrchestrator @Inject constructor(
                         toolResults.add(com.google.ai.client.generativeai.type.FunctionResponsePart(call.name, org.json.JSONObject(mapOf("result" to result))))
                     }
                     
-                    // Log for the user
-                    if (iterations > 1) {
-                        emit(OrchestrationStep.LogMessage("Verificando resultados (passo $iterations)..."))
-                    }
-
                     // Send back the results
                     apiResponse = currentChat.sendMessage(com.google.ai.client.generativeai.type.Content(role = "user", parts = toolResults))
                 }

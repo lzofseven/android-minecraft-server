@@ -393,7 +393,6 @@ class DashboardViewModel @Inject constructor(
                             )
                         }
                         WorkInfo.State.RUNNING -> {
-                             _serverStatus.value = ServerStatus.INSTALLING
                              // Optional: Update downloadProgress map if passed via progress
                              val progress = workInfo.progress.getInt("progress", 0) // Need to emit progress in Worker
                              if (progress > 0) _downloadProgress.value = progress

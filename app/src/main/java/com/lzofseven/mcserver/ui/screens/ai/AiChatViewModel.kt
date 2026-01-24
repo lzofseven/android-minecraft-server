@@ -32,8 +32,14 @@ class AiChatViewModel @Inject constructor(
     private val commandExecutor: AiCommandExecutor,
     private val serverManager: RealServerManager,
     private val contextManager: com.lzofseven.mcserver.core.ai.AiContextManager,
-    private val constructionDao: com.lzofseven.mcserver.data.local.dao.AiConstructionDao
+    private val constructionDao: com.lzofseven.mcserver.data.local.dao.AiConstructionDao,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
+
+    private val audioRecorder = com.lzofseven.mcserver.util.AudioRecorder(context)
+
+    private val _isRecording = MutableStateFlow(false)
+    val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -43,6 +49,33 @@ class AiChatViewModel @Inject constructor(
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    fun startRecording() {
+        if (_isLoading.value) return
+        _isRecording.value = true
+        audioRecorder.startRecording()
+    }
+
+    fun stopAndSendAudio() {
+        if (!_isRecording.value) return
+        _isRecording.value = false
+        val audioBytes = audioRecorder.stopRecording()
+        
+        if (audioBytes != null && audioBytes.isNotEmpty()) {
+            sendAudioRequest(audioBytes)
+        }
+    }
+
+    private fun sendAudioRequest(audioBytes: ByteArray) {
+        val msgs = _messages.value.toMutableList()
+        msgs.add(ChatMessage("user", "🎤 Mensagem de áudio", isOrchestrationLog = false))
+        _messages.value = msgs
+        _isLoading.value = true
+
+        viewModelScope.launch {
+            processRequest(text = "O usuário enviou um áudio. Processe o comando contido nele.", audioBytes = audioBytes)
+        }
+    }
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
@@ -57,76 +90,63 @@ class AiChatViewModel @Inject constructor(
         _isLoading.value = true
 
         viewModelScope.launch {
-            try {
-                val activeServer = serverManager.getActiveServerEntity()
-                if (activeServer == null) {
-                    _errorMessage.value = "Nenhum servidor ativo selecionado."
-                    return@launch
-                }
+            processRequest(text = text, audioBytes = null)
+        }
+    }
 
-                if (!serverManager.isServerRunning(activeServer.id)) {
-                    _messages.value = _messages.value + ChatMessage("model", "O servidor parece estar offline. Preciso que ele esteja rodando para poder executar comandos ou verificar o status.")
-                    _isLoading.value = false
-                    return@launch
-                }
+    private suspend fun processRequest(text: String, audioBytes: ByteArray?) {
+        try {
+            val activeServer = serverManager.getActiveServerEntity()
+            if (activeServer == null) {
+                _errorMessage.value = "Nenhum servidor ativo selecionado."
+                return
+            }
 
-                // Fix: Decode URL characters (e.g., %20 -> space)
-                val effectivePath = if (activeServer.path.startsWith("content://")) {
-                    serverManager.getRealPathFromSaf(activeServer.path) ?: activeServer.path
-                } else {
-                    activeServer.path
-                }
-                val decodedPath = java.net.URLDecoder.decode(effectivePath, "UTF-8")
+            if (!serverManager.isServerRunning(activeServer.id)) {
+                _messages.value = _messages.value + ChatMessage("model", "O servidor parece estar offline. Preciso que ele esteja rodando para poder executar comandos ou verificar o status.")
+                return
+            }
 
-                // Get Comprehensive Context (Memory + OPs + GameModes)
-                var contextStr: String? = null
-                if (activeServer != null) {
-                    contextStr = contextManager.getComprehensiveContext(activeServer.id)
-                }
+            val effectivePath = if (activeServer.path.startsWith("content://")) {
+                serverManager.getRealPathFromSaf(activeServer.path) ?: activeServer.path
+            } else {
+                activeServer.path
+            }
+            val decodedPath = java.net.URLDecoder.decode(effectivePath, "UTF-8")
 
-                orchestrator.processUserRequest(text, contextStr, activeServer!!.id, decodedPath).collect { step ->
-                    when (step) {
-                        is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.LogMessage -> {
-                            // Add a system log message or update status
-                            val current = _messages.value.toMutableList()
-                            current.add(ChatMessage("system", step.message, isOrchestrationLog = true))
-                            _messages.value = current
-                        }
-                        is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.ToolExecuting -> {
-                            // Show tool execution in chat
-                            val current = _messages.value.toMutableList()
-                            current.add(ChatMessage("system", "🛠 Executando ${step.toolName}: ${step.args}", isOrchestrationLog = true))
-                            _messages.value = current
-                            
-                            // FORCE CONTEXT REFRESH AFTER TOOLS (e.g. OP command)
-                            if (step.toolName == "run_command") {
-                                kotlinx.coroutines.delay(1000) // Give server time to update ops.json
-             
-                                // Re-inject updated context for next turn if still in loop (though orchestrator loop handles one turn)
-                                // Ideally, we update the ViewModel state or just rely on the next user message to pick it up.
-                                // But for multi-turn inside Orchestrator, Orchestrator itself needs to update context?
-                                // Actually, processUserRequest takes context *once*. 
-                                // For immediate effect *within* the same reasoning loop, Orchestrator needs to re-fetch?
-                                // Our current architecture passes context initially. 
-                                // If the AI Ops someone in step 1, step 2 won't know it yet unless we pass a callback or mutable context provider.
-                                // IMPORTANT: User said "after I typed /op, it didn't know".
-                                // For now, let's just ensure the NEXT user message gets fresh context.
-                                contextManager.getComprehensiveContext(activeServer!!.id) // Trigger refresh cache if any
-                            }
-                        }
-                        is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.FinalResponse -> {
-                            // Add AI response to chat
-                            val current = _messages.value.toMutableList()
-                            current.add(ChatMessage("model", step.text))
-                            _messages.value = current
-                        }
-                    }
-                }
+            val contextStr = contextManager.getComprehensiveContext(activeServer.id)
 
-            } catch (e: Exception) {
-                _errorMessage.value = e.message
-            } finally {
-                _isLoading.value = false
+            orchestrator.processUserRequest(text, contextStr, activeServer.id, decodedPath, audioBytes).collect { step ->
+                handleOrchestrationStep(step, activeServer.id)
+            }
+        } catch (e: Exception) {
+            _errorMessage.value = e.message
+        } finally {
+            _isLoading.value = false
+        }
+    }
+
+    private suspend fun handleOrchestrationStep(step: com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep, serverId: String) {
+        when (step) {
+            is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.LogMessage -> {
+                val current = _messages.value.toMutableList()
+                current.add(ChatMessage("system", step.message, isOrchestrationLog = true))
+                _messages.value = current
+            }
+            is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.ToolExecuting -> {
+                val current = _messages.value.toMutableList()
+                current.add(ChatMessage("system", "🛠 Executando ${step.toolName}: ${step.args}", isOrchestrationLog = true))
+                _messages.value = current
+                
+                if (step.toolName == "run_command") {
+                    kotlinx.coroutines.delay(1000)
+                    contextManager.getComprehensiveContext(serverId)
+                }
+            }
+            is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.FinalResponse -> {
+                val current = _messages.value.toMutableList()
+                current.add(ChatMessage("model", step.text))
+                _messages.value = current
             }
         }
     }

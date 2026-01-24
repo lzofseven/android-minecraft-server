@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
@@ -46,8 +47,20 @@ fun AiChatScreen(
 ) {
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isRecording by viewModel.isRecording.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.startRecording()
+        } else {
+            viewModel.clearError() // Reset error to show new one
+            // We could show a specific toast or dialog
+        }
+    }
 
     // Auto-scroll to bottom
     LaunchedEffect(messages.size) {
@@ -118,6 +131,11 @@ fun AiChatScreen(
             } else {
                 ChatInput(
                     onSend = { viewModel.sendMessage(it) },
+                    onStartRecording = {
+                        permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                    },
+                    onStopRecording = { viewModel.stopAndSendAudio() },
+                    isRecording = isRecording,
                     isLoading = isLoading
                 )
             }
@@ -479,14 +497,21 @@ fun LoadingBubble() {
 }
 
 @Composable
-fun ChatInput(onSend: (String) -> Unit, isLoading: Boolean) {
+fun ChatInput(
+    onSend: (String) -> Unit, 
+    onStartRecording: () -> Unit,
+    onStopRecording: () -> Unit,
+    isRecording: Boolean,
+    isLoading: Boolean
+) {
     var text by remember { mutableStateOf("") }
+    val micIcon = if (isRecording) Icons.Default.AutoAwesome else Icons.Default.SmartToy // Placeholder or use specialized mic icon if available
 
     Surface(
         color = SurfaceDark,
         shape = RoundedCornerShape(32.dp),
         shadowElevation = 8.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(0.1f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isRecording) PrimaryDark else Color.White.copy(0.1f)),
         modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
         Row(
@@ -495,9 +520,31 @@ fun ChatInput(onSend: (String) -> Unit, isLoading: Boolean) {
                 .fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Audio Button (Mic)
+            IconButton(
+                onClick = { 
+                    if (isRecording) onStopRecording() else onStartRecording() 
+                },
+                enabled = !isLoading,
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(
+                        if (isRecording) Color.Red.copy(0.2f) else Color.Transparent,
+                        CircleShape
+                    )
+            ) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.filled.Mic,
+                    contentDescription = "Fala",
+                    tint = if (isRecording) Color.Red else Color.White.copy(0.4f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
             TextField(
-                value = text,
-                onValueChange = { text = it },
+                value = if (isRecording) "Gravando áudio..." else text,
+                onValueChange = { if (!isRecording) text = it },
+                readOnly = isRecording,
                 modifier = Modifier
                     .weight(1f)
                     .background(Color.Transparent),
@@ -507,8 +554,8 @@ fun ChatInput(onSend: (String) -> Unit, isLoading: Boolean) {
                     unfocusedContainerColor = Color.Transparent,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = if (isRecording) Color.Red else Color.White,
+                    unfocusedTextColor = if (isRecording) Color.Red else Color.White,
                     cursorColor = PrimaryDark
                 ),
                 singleLine = true
@@ -521,18 +568,18 @@ fun ChatInput(onSend: (String) -> Unit, isLoading: Boolean) {
                         text = ""
                     }
                 },
-                enabled = !isLoading && text.isNotBlank(),
+                enabled = !isLoading && text.isNotBlank() && !isRecording,
                 modifier = Modifier
                     .size(44.dp)
                     .background(
-                        if (!isLoading && text.isNotBlank()) PrimaryDark else Color.White.copy(alpha = 0.05f),
+                        if (!isLoading && text.isNotBlank() && !isRecording) PrimaryDark else Color.White.copy(alpha = 0.05f),
                         CircleShape
                     )
             ) {
                 Icon(
                     Icons.Default.Send,
                     null,
-                    tint = if (!isLoading && text.isNotBlank()) BackgroundDark else Color.White.copy(alpha = 0.2f),
+                    tint = if (!isLoading && text.isNotBlank() && !isRecording) BackgroundDark else Color.White.copy(alpha = 0.2f),
                     modifier = Modifier.size(20.dp)
                 )
             }
