@@ -24,7 +24,13 @@ class ConsoleViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             realServerManager.getConsoleFlow(serverId).collect { log ->
-                _logs.value = _logs.value + log
+                val current = _logs.value.toMutableList()
+                current.add(log)
+                if (current.size > 500) {
+                    _logs.value = current.takeLast(500)
+                } else {
+                    _logs.value = current
+                }
             }
         }
     }

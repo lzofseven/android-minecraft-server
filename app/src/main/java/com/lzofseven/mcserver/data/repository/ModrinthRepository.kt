@@ -44,7 +44,7 @@ class ModrinthRepository @Inject constructor(
         val gameVersionsJson = gameVersions?.let { list ->
             "[" + list.joinToString(",") { "\"$it\"" } + "]"
         }
-        api.getProjectVersions(projectId, loadersJson, gameVersionsJson)
+        api.getProjectVersions(projectId, loadersJson, gameVersionsJson, limit = 100)
     }
 
     suspend fun getProject(projectId: String): com.lzofseven.mcserver.data.model.ModrinthProject = withContext(Dispatchers.IO) {

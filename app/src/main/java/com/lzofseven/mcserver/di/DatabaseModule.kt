@@ -39,4 +39,9 @@ object DatabaseModule {
     fun provideServerDao(database: AppDatabase): ServerDao {
         return database.serverDao()
     }
+
+    @Provides
+    fun provideAiConstructionDao(database: AppDatabase): com.lzofseven.mcserver.data.local.dao.AiConstructionDao {
+        return database.aiConstructionDao()
+    }
 }

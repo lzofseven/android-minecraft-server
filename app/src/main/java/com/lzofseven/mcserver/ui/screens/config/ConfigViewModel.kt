@@ -75,6 +75,12 @@ class ConfigViewModel @Inject constructor(
     
     private val _restartRequiredEvent = kotlinx.coroutines.flow.MutableSharedFlow<Boolean>()
     val restartRequiredEvent = _restartRequiredEvent.asSharedFlow()
+    
+    private val _isSaving = MutableStateFlow(false)
+    val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
+    
+    private val _saveSuccessEvent = MutableSharedFlow<Unit>()
+    val saveSuccessEvent = _saveSuccessEvent.asSharedFlow()
 
     init {
         loadServerConfig()
@@ -150,7 +156,11 @@ class ConfigViewModel @Inject constructor(
     }
 
     fun saveConfig() {
+        if (_isSaving.value) return
+        _isSaving.value = true
+        
         viewModelScope.launch {
+            try {
             currentServer?.let { server ->
                 val typeChanged = _serverType.value.name != server.type
                 val ramChanged = _ramAllocation.value != server.ramAllocationMB
@@ -266,10 +276,14 @@ class ConfigViewModel @Inject constructor(
                 if (typeChanged || ramChanged) {
                     _restartRequiredEvent.emit(true)
                 }
+                _saveSuccessEvent.emit(Unit)
             }
+        } finally {
+            _isSaving.value = false
         }
     }
-    
+}
+
     fun deleteServer(navController: androidx.navigation.NavController) {
         viewModelScope.launch {
             currentServer?.let { server ->
@@ -292,10 +306,15 @@ class ConfigViewModel @Inject constructor(
                 try {
                      val uri = android.net.Uri.parse(serverPath)
                      val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
-                     val configFile = rootDoc?.findFile("manager_config.properties")
+                     var configFile = rootDoc?.findFile("manager_config.properties")
+                     if (configFile == null) {
+                         configFile = rootDoc?.findFile("manager_config.properties.txt")
+                     }
+                     
                      if (configFile != null) {
                          context.contentResolver.openInputStream(configFile.uri)?.use { props.load(it) }
                          loaded = true
+                         android.util.Log.d("ConfigViewModel", "LOAD_CONFIG: Loaded from SAF $serverPath")
                      }
                      
                      // Check EULA for defaults logic
@@ -337,16 +356,20 @@ class ConfigViewModel @Inject constructor(
                     val maxFreq = props.getProperty("forceMaxFrequency", "false").toBoolean()
                     val autoEula = props.getProperty("autoAcceptEula", "true").toBoolean()
                     
-                    _cpuCores.value = cores
+                     _cpuCores.value = cores
                     _forceMaxFrequency.value = maxFreq
                     _autoAcceptEula.value = autoEula
                     
+                    android.util.Log.d("ConfigViewModel", "LOAD_CONFIG: cpuCores=$cores, maxFreq=$maxFreq, autoEula=$autoEula")
+
                     _notifyStatus.value = props.getProperty("notifyStatus", "true").toBoolean()
                     _notifyPlayers.value = props.getProperty("notifyPlayers", "true").toBoolean()
                     _notifyPerformance.value = props.getProperty("notifyPerformance", "false").toBoolean()
                     _cpuThreshold.value = props.getProperty("cpuThreshold", "80").toIntOrNull() ?: 80
                     _ramThreshold.value = props.getProperty("ramThreshold", "90").toIntOrNull() ?: 90
                 } catch (e: Exception) { e.printStackTrace() }
+            } else {
+                android.util.Log.d("ConfigViewModel", "LOAD_CONFIG: No config file found at $serverPath, using defaults")
             }
         }
     }

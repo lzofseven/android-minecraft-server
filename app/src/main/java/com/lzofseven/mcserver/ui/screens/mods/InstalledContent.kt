@@ -5,6 +5,7 @@ data class InstalledContent(
     val name: String,
     val author: String = "Desconhecido",
     val version: String = "N/A",
+    val loader: String? = null,
     val fileName: String,
     val type: String, // "mod", "plugin", "world"
     val isEnabled: Boolean,

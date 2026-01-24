@@ -12,6 +12,9 @@ interface ServerDao {
     @Query("SELECT * FROM servers WHERE id = :id")
     suspend fun getServerById(id: String): MCServerEntity?
 
+    @Query("SELECT * FROM servers WHERE id = :id")
+    fun getServerByIdFlow(id: String): Flow<MCServerEntity?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertServer(server: MCServerEntity)
 

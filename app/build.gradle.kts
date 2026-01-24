@@ -136,4 +136,7 @@ dependencies {
     // Compression (para extrair .deb/.tar.xz)
     implementation("org.apache.commons:commons-compress:1.26.0")
     implementation("org.tukaani:xz:1.9")
+    
+    // Gemini AI
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 }

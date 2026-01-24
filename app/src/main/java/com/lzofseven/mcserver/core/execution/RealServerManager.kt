@@ -34,6 +34,11 @@ class RealServerManager @Inject constructor(
 ) {
 
     private val processes = ConcurrentHashMap<String, Process>()
+    private val activeServerConfigs = ConcurrentHashMap<String, MCServerEntity>()
+
+    fun getActiveServerEntity(): MCServerEntity? {
+        return activeServerConfigs.values.firstOrNull()
+    }
     
     // HTTP client for JAR downloads
     private val serviceHttpClient = OkHttpClient.Builder()
@@ -42,6 +47,10 @@ class RealServerManager @Inject constructor(
         .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .build()
     
+    fun getExecutionDirectory(serverId: String): File {
+        return File(context.filesDir, "server_execution_$serverId")
+    }
+
     private val _runningServerCount = MutableStateFlow(0)
     val runningServerCount: StateFlow<Int> = _runningServerCount.asStateFlow()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -63,17 +72,61 @@ class RealServerManager @Inject constructor(
         return _onlinePlayers.getOrPut(serverId) { MutableStateFlow(emptyList()) }.asStateFlow()
     }
 
+    // Simple deduper for logs (Ring Buffer)
+    private val recentLogs = java.util.Collections.synchronizedMap(java.util.LinkedHashMap<String, Long>(100, 0.75f, true))
+
     fun logToConsole(serverId: String, message: String) {
+        // Debounce exact duplicates within 500ms (fixes rapid duplicate emits)
+        val key = "$serverId:$message"
+        val now = System.currentTimeMillis()
+        val lastSeen = recentLogs[key] ?: 0L
+        
+        if (now - lastSeen < 300) return // Skip duplicates < 300ms
+        recentLogs[key] = now
+
         val flow = _consoleStreams.getOrPut(serverId) { MutableSharedFlow(replay = 50) }
         scope.launch {
             flow.emit(message)
         }
     }
+    
+    // Internal helper to ensure we use the centralized dedupe method
+    private fun emitLog(serverId: String, message: String) {
+        logToConsole(serverId, message)
+    }
 
-    private fun getManagerConfig(serverId: String): java.util.Properties {
+    suspend fun syncFileToExecutionDir(serverId: String, fileName: String) = withContext(Dispatchers.IO) {
+        val server = serverRepository.getServerById(serverId) ?: return@withContext
+        val executionDir = File(context.filesDir, "server_execution_$serverId")
+        if (!executionDir.exists()) return@withContext
+        
+        val sourcePath = server.uri ?: server.path
+        if (sourcePath.startsWith("content://")) {
+            val rootDoc = DocumentFile.fromTreeUri(context, Uri.parse(sourcePath))
+            val sourceFile = rootDoc?.findFile(fileName)
+            if (sourceFile != null) {
+                val destFile = File(executionDir, fileName)
+                context.contentResolver.openInputStream(sourceFile.uri)?.use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Log.d("RealServerManager", "Synced $fileName to execution dir via SAF")
+            }
+        } else {
+            val sourceFile = File(sourcePath, fileName)
+            if (sourceFile.exists()) {
+                val destFile = File(executionDir, fileName)
+                sourceFile.copyTo(destFile, overwrite = true)
+                Log.d("RealServerManager", "Synced $fileName to execution dir via File")
+            }
+        }
+    }
+
+    private suspend fun getManagerConfig(serverId: String): java.util.Properties = withContext(Dispatchers.IO) {
         val props = java.util.Properties()
         try {
-            val server = runBlocking { serverRepository.getServerById(serverId) } ?: return props
+            val server = serverRepository.getServerById(serverId) ?: return@withContext props
             val serverPath = server.uri ?: server.path
             
             if (serverPath.startsWith("content://")) {
@@ -90,7 +143,7 @@ class RealServerManager @Inject constructor(
                 }
             }
         } catch (e: Exception) { e.printStackTrace() }
-        return props
+        return@withContext props
     }
 
     private fun copyDirectorySAF(source: DocumentFile, dest: File) {
@@ -195,8 +248,8 @@ class RealServerManager @Inject constructor(
         flow.value = current
     }
 
-    suspend fun startServer(server: MCServerEntity) {
-        if (processes.containsKey(server.id)) return // Already running
+    suspend fun startServer(server: MCServerEntity): Unit = withContext(Dispatchers.IO) {
+        if (processes.containsKey(server.id)) return@withContext // Already running
 
         // Start Foreground Service to keep process alive
         com.lzofseven.mcserver.service.MinecraftService.start(context)
@@ -219,6 +272,7 @@ class RealServerManager @Inject constructor(
         // Java Check
         // NEW: Respect the user's selected Java version
         val javaVersion = server.javaVersion 
+        Log.i("RealServerManager", "LAUNCHING SERVER: ID=${server.id}, Selected Java=$javaVersion")
         emitLog(server.id, "Checking Java $javaVersion...")
  
         if (!javaManager.isJavaInstalled(javaVersion)) {
@@ -234,7 +288,7 @@ class RealServerManager @Inject constructor(
         if (!executable.exists()) {
             emitLog(server.id, "Error: Java binary not found at ${executable.absolutePath}")
             stopServiceIfEmpty()
-            return
+            return@withContext
         }
 
         emitLog(server.id, "Starting server with ${executable.name}...")
@@ -339,7 +393,7 @@ class RealServerManager @Inject constructor(
                 
                 if (repairFailed) {
                     stopServiceIfEmpty()
-                    return
+                    return@withContext
                 }
             }
             
@@ -364,19 +418,21 @@ class RealServerManager @Inject constructor(
                 Log.e("RealServerManager", "Critical: server.jar not found even after repair check!")
                 emitLog(server.id, "Error: server.jar not found in $serverPath")
                 stopServiceIfEmpty()
-                return
+                return@withContext
             }
             
             // Read CPU Core Limit from config
-            var cpuCores = server.javaVersion // Default - wait, this was a typo in previous code, meant to be total processors
-            cpuCores = Runtime.getRuntime().availableProcessors()
+            var cpuCores = Runtime.getRuntime().availableProcessors()
 
             val configProps = java.util.Properties()
             if (serverPath.startsWith("content://")) {
                 try {
                     val uri = Uri.parse(serverPath)
                     val rootDoc = DocumentFile.fromTreeUri(context, uri)
-                    val configFileSAF = rootDoc?.findFile("manager_config.properties")
+                    var configFileSAF = rootDoc?.findFile("manager_config.properties")
+                    if (configFileSAF == null) {
+                        configFileSAF = rootDoc?.findFile("manager_config.properties.txt")
+                    }
                     if (configFileSAF != null) {
                         context.contentResolver.openInputStream(configFileSAF.uri)?.use { configProps.load(it) }
                     }
@@ -392,6 +448,7 @@ class RealServerManager @Inject constructor(
             
             val limit = configProps.getProperty("cpuCores", cpuCores.toString()).toIntOrNull() ?: cpuCores
             cpuCores = limit
+            Log.d("RealServerManager", "EXECUTION_CONFIG: cpuCores set to $cpuCores")
 
             // Build command with Java-version-specific flags
             // NEW: SAF Execution Strategy - "Copy-to-Run"
@@ -508,7 +565,7 @@ class RealServerManager @Inject constructor(
                 }
             }
             
-            Log.i("RealServerManager", "Executing from private dir: ${baseCommand.joinToString(" ")}")
+            Log.i("RealServerManager", "FINAL COMMAND: ${baseCommand.joinToString(" ")}")
             
             commandPrefix = baseCommand
 
@@ -557,6 +614,7 @@ class RealServerManager @Inject constructor(
 
             val process = builder.start()
             processes[server.id] = process
+            activeServerConfigs[server.id] = server
             
             // Save PID
             val pid = getPid(process)
@@ -675,7 +733,8 @@ class RealServerManager @Inject constructor(
                                 Log.i("RealServerManager", "Auto-Restart: Found patched JAR ${patchedJar.name}, restarting...")
                                 emitLog(server.id, "Patch concluído! Reiniciando com JAR otimizado...")
                                 
-                                processes.remove(server.id) 
+                                processes.remove(server.id)
+                                activeServerConfigs.remove(server.id) 
                                 startServer(server) 
                                 shouldStop = false 
                         } else if (server.javaVersion == 21) {
@@ -688,6 +747,7 @@ class RealServerManager @Inject constructor(
                             serverRepository.updateServer(updatedServer) // Persist the change
                             
                             processes.remove(server.id)
+                            activeServerConfigs.remove(server.id)
                             startServer(updatedServer)
                             shouldStop = false
                         }
@@ -735,10 +795,18 @@ class RealServerManager @Inject constructor(
         }
     }
 
+    fun sendRconCommand(command: String) {
+        // Find the first running server and send the command
+        processes.entries.firstOrNull { it.value.isAlive }?.let { (serverId, _) ->
+            sendCommand(serverId, command)
+        }
+    }
+
     fun stopServer(serverId: String) {
         val process = processes[serverId]
         if (process == null || !process.isAlive) {
             processes.remove(serverId)
+            activeServerConfigs.remove(serverId)
             return
         }
         
@@ -990,7 +1058,7 @@ class RealServerManager @Inject constructor(
     /**
      * Resolves a SAF URI to a real filesystem path if possible
      */
-    private fun getRealPathFromSaf(uriStr: String): String? {
+    fun getRealPathFromSaf(uriStr: String): String? {
         try {
             val uri = Uri.parse(uriStr)
             val docId = if (uriStr.contains("/tree/")) {
@@ -1018,25 +1086,7 @@ class RealServerManager @Inject constructor(
         return null
     }
 
-    private fun emitLog(serverId: String, message: String) {
-        val flow = _consoleStreams.getOrPut(serverId) { MutableSharedFlow(replay = 50) }
-        scope.launch {
-            // Strip ANSI codes to check for timestamp
-            val cleanMessage = message.replace(Regex("\u001B\\[[;\\d]*m"), "")
-            
-            // Check if message effectively starts with [HH:mm:ss]
-            // We use find() instead of matches() to avoid issues with trailing characters or whitespace
-            // The regex looks for start of string, optional whitespace, optional ANSI, then [digits:digits:digits]
-            val hasTimestamp = Regex("^\\s*\\[\\d{2}:\\d{2}:\\d{2}]").containsMatchIn(cleanMessage)
-            
-            if (hasTimestamp) {
-                flow.emit(message)
-            } else {
-                val timestamp = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
-                flow.emit("[$timestamp] $message")
-            }
-        }
-    }
+
 
     private fun getJavaVersionForMc(mcVersion: String): Int {
         return McVersionUtils.getRequiredJavaVersion(mcVersion)

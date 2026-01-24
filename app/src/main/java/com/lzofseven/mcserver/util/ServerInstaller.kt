@@ -135,7 +135,7 @@ class ServerInstaller @Inject constructor(
         }
     }
 
-    fun isEulaAccepted(path: String): Boolean {
+    suspend fun isEulaAccepted(path: String): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
         android.util.Log.d("ServerInstaller", "isEulaAccepted checking path: $path")
         if (path.startsWith("content://")) {
              try {
@@ -148,33 +148,33 @@ class ServerInstaller @Inject constructor(
                     context.contentResolver.openInputStream(eulaDoc.uri)?.use { 
                         val content = it.reader().readText()
                         android.util.Log.d("ServerInstaller", "EULA content: '$content'")
-                        return content.contains("eula=true")
+                        return@withContext content.contains("eula=true")
                     }
                 }
-                return false
+                false
             } catch (e: Exception) {
                 android.util.Log.e("ServerInstaller", "Error checking EULA (SAF)", e)
-                return false
+                false
             }
         } else {
             try {
                 val eulaFile = File(path, "eula.txt")
                 if (!eulaFile.exists()) {
                      android.util.Log.d("ServerInstaller", "EULA file not found at ${eulaFile.absolutePath}")
-                     return false
+                     return@withContext false
                 }
                 val content = eulaFile.readText()
                 android.util.Log.d("ServerInstaller", "EULA file content: '$content'")
-                return content.contains("eula=true")
+                content.contains("eula=true")
             } catch (e: SecurityException) {
                 android.util.Log.w("ServerInstaller", "Permission denied reading EULA (need SAF): ${e.message}")
-                return false
+                false
             } catch (e: java.io.FileNotFoundException) {
                 android.util.Log.w("ServerInstaller", "EULA file access denied (need SAF): ${e.message}")
-                return false
+                false
             } catch (e: Exception) {
                 android.util.Log.e("ServerInstaller", "Error checking EULA", e)
-                return false
+                false
             }
         }
     }

@@ -46,6 +46,12 @@ fun ModsScreen(
     
     val snackbarHostState = remember { SnackbarHostState() }
     val tabs = listOf("Mods", "Plugins", "Arquivos")
+
+    val filePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { viewModel.importFile(it) }
+    }
     
     var searchQuery by remember { mutableStateOf("") }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
@@ -168,6 +174,9 @@ fun ModsScreen(
                                 )
                             }
                         }
+                        IconButton(onClick = { filePickerLauncher.launch("*/*") }) {
+                            Icon(Icons.Default.CloudUpload, "Importar Arquivo", tint = Color.White.copy(0.6f))
+                        }
                         IconButton(onClick = { showCreateFolderDialog = true }) {
                             Icon(Icons.Default.CreateNewFolder, "Nova Pasta", tint = Color.White.copy(0.6f))
                         }
@@ -282,10 +291,12 @@ fun TextEditor(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     IconButton(onClick = onClose) {
                         Icon(Icons.Default.Close, "Fechar", tint = Color.White)
                     }
@@ -294,9 +305,13 @@ fun TextEditor(
                         text = item.name,
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+                
+                Spacer(Modifier.width(16.dp))
                 
                 Button(
                     onClick = onSave,
@@ -384,7 +399,8 @@ fun ContentCard(item: InstalledContent, onToggle: (InstalledContent) -> Unit, on
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(item.name, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Versão ${item.version}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.4f))
+                val loaderText = item.loader?.replaceFirstChar { it.uppercase() }?.let { "$it • " } ?: ""
+                Text("$loaderText${if(item.loader != null) "" else "Versão "}${item.version}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.4f))
             }
             
             CustomSwitch(
@@ -408,7 +424,7 @@ fun FileItem(
     onEdit: (BrowserItem) -> Unit,
     onRename: (String) -> Unit
 ) {
-    val isEditable = item.extension.lowercase() == "txt"
+    val isEditable = listOf("txt", "json", "yml", "yaml", "properties", "log", "conf", "sh", "xml", "toml", "md", "lua", "ini").contains(item.extension.lowercase())
     var showRenameDialog by remember { mutableStateOf(false) }
 
     Surface(

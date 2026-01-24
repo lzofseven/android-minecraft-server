@@ -474,6 +474,7 @@ class ModsViewModel @Inject constructor(
                 name = meta?.title ?: remoteTitle ?: localMeta.name ?: (if (isEnabled) fileName else fileName.removeSuffix(".disabled")),
                 author = localMeta.author ?: "Autor Desconhecido",
                 version = meta?.version ?: localMeta.version ?: "N/A",
+                loader = meta?.loader,
                 fileName = fileName,
                 type = type,
                 isEnabled = isEnabled,
@@ -531,6 +532,7 @@ class ModsViewModel @Inject constructor(
                 name = meta?.title ?: remoteTitle ?: localMeta.name ?: (if (isEnabled) fileName else fileName.removeSuffix(".disabled")),
                 author = localMeta.author ?: "Autor Desconhecido",
                 version = meta?.version ?: localMeta.version ?: "N/A",
+                loader = meta?.loader,
                 fileName = fileName,
                 type = type,
                 isEnabled = isEnabled,
@@ -707,5 +709,54 @@ class ModsViewModel @Inject constructor(
                 }
             }
         }
+    }
+    fun importFile(uri: android.net.Uri) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val targetPath = _currentBrowserPath.value ?: return@launch
+            try {
+                // Get filename from Uri
+                val fileName = getFileNameFromUri(uri) ?: "imported_file_${System.currentTimeMillis()}"
+                _toastMessage.emit("Importando $fileName...")
+
+                val inputStream = context.contentResolver.openInputStream(uri) ?: throw Exception("Falha ao abrir arquivo")
+                
+                if (targetPath.startsWith("content://")) {
+                    val parentUri = android.net.Uri.parse(targetPath)
+                    val parentDoc = DocumentFile.fromTreeUri(context, parentUri)
+                    val existing = parentDoc?.findFile(fileName)
+                    existing?.delete()
+                    val newFile = parentDoc?.createFile(context.contentResolver.getType(uri) ?: "application/octet-stream", fileName)
+                    newFile?.let { context.contentResolver.openOutputStream(it.uri)?.use { out -> inputStream.copyTo(out) } }
+                } else {
+                    val targetFile = File(targetPath, fileName)
+                    targetFile.outputStream().use { out -> inputStream.copyTo(out) }
+                }
+                
+                loadContent()
+                _toastMessage.emit("Importado com sucesso!")
+            } catch (e: Exception) {
+                _toastMessage.emit("Erro ao importar: ${e.message}")
+            }
+        }
+    }
+
+    private fun getFileNameFromUri(uri: android.net.Uri): String? {
+        var result: String? = null
+        if (uri.scheme == "content") {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (index != -1) result = cursor.getString(index)
+                }
+            }
+        }
+        if (result == null) {
+            result = uri.path
+            val cut = result?.lastIndexOf('/')
+            if (cut != null && cut != -1) {
+                result = result?.substring(cut + 1)
+            }
+        }
+        return result
     }
 }

@@ -44,6 +44,10 @@ sealed class Screen(val route: String) {
     object ModDetails : Screen("mod_details/{serverId}/{projectId}") {
         fun createRoute(serverId: String, projectId: String) = "mod_details/$serverId/$projectId"
     }
+
+    object AiChat : Screen("ai_chat/{serverId}") {
+        fun createRoute(serverId: String) = "ai_chat/$serverId"
+    }
 }
 
 @Composable
@@ -122,6 +126,13 @@ fun NavGraph(
             )
         ) {
             com.lzofseven.mcserver.ui.screens.moddetails.ModDetailsScreen(navController = navController)
+        }
+
+        composable(
+            route = Screen.AiChat.route,
+            arguments = listOf(navArgument("serverId") { type = NavType.StringType })
+        ) {
+            com.lzofseven.mcserver.ui.screens.ai.AiChatScreen(navController = navController)
         }
     }
 }

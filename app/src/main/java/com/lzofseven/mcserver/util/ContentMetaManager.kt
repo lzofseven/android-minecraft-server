@@ -15,7 +15,8 @@ data class ContentMetadata(
     val iconUrl: String?,
     val version: String,
     val projectType: String, // "mod" or "plugin"
-    val filename: String
+    val filename: String,
+    val loader: String? = null
 )
 
 class ContentMetaManager(private val context: Context, private val serverPath: String) {

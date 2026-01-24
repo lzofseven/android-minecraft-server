@@ -38,37 +38,40 @@ class ServerListViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             repository.allServers.collect { serverList ->
-                val newMotds = serverList.associate { server ->
-                    server.id to try {
-                        val props = com.lzofseven.mcserver.util.ServerPropertiesManager(context, server.uri ?: server.path).load()
-                        props["motd"] ?: "A Minecraft Server"
-                    } catch (e: Exception) {
-                        "A Minecraft Server"
-                    }
-                }
-                _motds.value = newMotds
-
-                val newIcons = serverList.associate { server ->
-                    server.id to try {
-                        val path = server.uri ?: server.path
-                        if (path.startsWith("content://")) {
-                            val uri = android.net.Uri.parse(path)
-                            val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
-                            val iconDoc = rootDoc?.findFile("server-icon.png")
-                            if (iconDoc != null && iconDoc.exists()) {
-                                context.contentResolver.openInputStream(iconDoc.uri)?.use { stream ->
-                                    android.graphics.BitmapFactory.decodeStream(stream)
-                                }
-                            } else null
-                        } else {
-                            val iconFile = java.io.File(path, "server-icon.png")
-                            if (iconFile.exists()) {
-                                android.graphics.BitmapFactory.decodeFile(iconFile.absolutePath)
-                            } else null
+                // Switch to IO for batch file/bitmap operations
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val newMotds = serverList.associate { server ->
+                        server.id to try {
+                            val props = com.lzofseven.mcserver.util.ServerPropertiesManager(context, server.uri ?: server.path).load()
+                            props["motd"] ?: "A Minecraft Server"
+                        } catch (e: Exception) {
+                            "A Minecraft Server"
                         }
-                    } catch (e: Exception) { null }
+                    }
+                    _motds.value = newMotds
+
+                    val newIcons = serverList.associate { server ->
+                        server.id to try {
+                            val path = server.uri ?: server.path
+                            if (path.startsWith("content://")) {
+                                val uri = android.net.Uri.parse(path)
+                                val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                                val iconDoc = rootDoc?.findFile("server-icon.png")
+                                if (iconDoc != null && iconDoc.exists()) {
+                                    context.contentResolver.openInputStream(iconDoc.uri)?.use { stream ->
+                                        android.graphics.BitmapFactory.decodeStream(stream)
+                                    }
+                                } else null
+                            } else {
+                                val iconFile = java.io.File(path, "server-icon.png")
+                                if (iconFile.exists()) {
+                                    android.graphics.BitmapFactory.decodeFile(iconFile.absolutePath)
+                                } else null
+                            }
+                        } catch (e: Exception) { null }
+                    }
+                    _icons.value = newIcons
                 }
-                _icons.value = newIcons
             }
         }
     }

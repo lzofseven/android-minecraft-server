@@ -16,6 +16,10 @@ class ServerRepository @Inject constructor(
         return serverDao.getServerById(id)
     }
 
+    fun getServerByIdFlow(id: String): Flow<MCServerEntity?> {
+        return serverDao.getServerByIdFlow(id)
+    }
+
     suspend fun insertServer(server: MCServerEntity) {
         serverDao.insertServer(server)
     }

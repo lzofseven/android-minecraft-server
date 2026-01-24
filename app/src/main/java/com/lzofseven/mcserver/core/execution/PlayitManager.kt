@@ -161,14 +161,11 @@ class PlayitManager @Inject constructor(
                 _status.value = "Running"
                 Log.i("PlayitManager", "Process started successfully")
                 
-                // Watchdog: If no address found in 12s, it might be stuck or silent.
-                // Restart once or warn.
+                // Watchdog: If no address found in 30s, it might be stuck or silent.
                 scope.launch {
-                    kotlinx.coroutines.delay(12000)
+                    kotlinx.coroutines.delay(30000)
                     if (status.value == "Running" && _address.value == null && _claimLink.value == null) {
-                        Log.w("PlayitManager", "No address found after 12s, attempting silent restart...")
-                        // We don't stop everything, just the process to trigger a fresh log
-                        Log.w("PlayitManager", "No address found after 12s, attempting silent restart...")
+                        Log.w("PlayitManager", "No address found after 30s, attempting silent restart...")
                         pendingRestart = true
                         p.destroy()
                     }
@@ -195,7 +192,7 @@ class PlayitManager @Inject constructor(
                             }
                             
                             // Parse registered tunnels
-                            if (logLine.contains("0 tunnels registered", ignoreCase = true)) {
+                            if (logLine.contains("agent has 0 tunnels", ignoreCase = true) || logLine.contains("0 tunnels registered", ignoreCase = true)) {
                                 _address.value = "Adicione um Túnel no Painel"
                             }
                             
@@ -208,7 +205,8 @@ class PlayitManager @Inject constructor(
                                 }
                             }
                             
-                            if (logLine.contains("tunnels registered", ignoreCase = true) && !logLine.contains("0 tunnels")) {
+                            if ((logLine.contains("tunnels registered", ignoreCase = true) || logLine.contains("agent has", ignoreCase = true)) 
+                                && !logLine.contains(" 0 tunnels", ignoreCase = true)) {
                                 if (_address.value == null || _address.value?.contains("Adicione") == true) {
                                     _address.value = "Túnel Ativo (Capturando...)"
                                 }
@@ -237,15 +235,19 @@ class PlayitManager @Inject constructor(
 
     private fun extractAddress(line: String): String? {
         val patterns = listOf(
-            Regex(".*(?:address|url|tunnel):\\s*([a-z0-9.-]+(?:\\.[a-z]{2,})+(?::\\d+)?)", RegexOption.IGNORE_CASE),
-            Regex("([a-z0-9.-]+(?:\\.[a-z]{2,})+(?::\\d+)?)", RegexOption.IGNORE_CASE)
+            Regex("([a-z0-9-]+\\.playit\\.gg(?::\\d+)?)", RegexOption.IGNORE_CASE),
+            Regex("([a-z0-9-]+\\.joinmc\\.link(?::\\d+)?)", RegexOption.IGNORE_CASE),
+            Regex("address:\\s*([a-z0-9.-]+(?:\\.[a-z]{2,})+(?::\\d+)?)", RegexOption.IGNORE_CASE)
         )
         
         for (pattern in patterns) {
             val match = pattern.find(line)
             if (match != null) {
-                // If group 1 exists, use it (address only), else whole match
-                return if (match.groups.size > 1) match.groups[1]?.value else match.value.trim()
+                val addr = if (match.groups.size > 1) match.groups[1]?.value else match.value.trim()
+                // Avoid catching control server IPs (they don't have .playit.gg or .joinmc.link usually in this regex)
+                if (addr != null && (addr.contains(".playit.gg") || addr.contains(".joinmc.link"))) {
+                    return addr
+                }
             }
         }
         return null

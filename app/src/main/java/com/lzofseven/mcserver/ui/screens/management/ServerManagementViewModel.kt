@@ -22,6 +22,7 @@ import com.lzofseven.mcserver.ui.screens.config.UiEvent
 @HiltViewModel
 class ServerManagementViewModel @Inject constructor(
     private val repository: ServerRepository,
+    private val serverManager: com.lzofseven.mcserver.core.execution.RealServerManager,
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -251,6 +252,9 @@ class ServerManagementViewModel @Inject constructor(
                                      _serverIconPath.value = doc.uri.toString()
                                      _serverIconUpdate.value = System.currentTimeMillis()
                                      _uiEvent.emit(UiEvent.ShowToast("Ícone atualizado!"))
+                                     
+                                     // Force sync to execution dir if server is running
+                                     serverManager.syncFileToExecutionDir(server.id, "server-icon.png")
                                  }
                              }
                         } else {
@@ -263,6 +267,10 @@ class ServerManagementViewModel @Inject constructor(
                             log("Server icon updated: ${iconFile.absolutePath}")
                             _serverIconPath.value = iconFile.absolutePath
                             _serverIconUpdate.value = System.currentTimeMillis()
+                            _uiEvent.emit(UiEvent.ShowToast("Ícone atualizado!"))
+
+                            // Force sync to execution dir if server is running
+                            serverManager.syncFileToExecutionDir(server.id, "server-icon.png")
                         }
                     }
                 }

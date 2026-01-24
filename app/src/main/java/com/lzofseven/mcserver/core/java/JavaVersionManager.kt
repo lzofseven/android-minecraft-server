@@ -40,30 +40,30 @@ class JavaVersionManager @Inject constructor(
 
     fun getJavaExecutable(version: Int): File {
         // Map to available runtimes: Java 17 for everything up to v17, Java 21 for v21+
-        val targetVersion = if (version <= 17) 17 else 21
+        // Version tagging (v3) ensures a clean reinstall after major fixes
+        val targetVersion = if (version <= 17) 17 else "21-v3"
         return File(runtimesDir, "java-$targetVersion/bin/java")
     }
 
     fun isJavaInstalled(version: Int): Boolean {
         val javaBin = getJavaExecutable(version)
-        val installDir = javaBin.parentFile.parentFile
+        val installDir = javaBin.parentFile?.parentFile ?: return false
         val libz = File(installDir, "lib/libz.so.1")
         val libjvm = File(installDir, "lib/server/libjvm.so")
         
-        // Termux java binaries are small launchers (~6KB), so we can't check for >1MB.
-        // Also check libz.so.1 to ensure symlink-related corruption is addressed.
-        // CRITICAL: Check for libjvm.so (Exit Code 4 cause)
         return javaBin.exists() && javaBin.canExecute() && javaBin.length() > 0 && 
                (!libz.exists() || libz.length() > 0) &&
                libjvm.exists()
     }
 
     fun installJava(version: Int): Flow<DownloadStatus> = flow {
-        // Map to available runtimes: Java 17 for everything up to v17, Java 21 for v21+
-        val targetVersion = if (version <= 17) 17 else 21
-        val installDir = File(runtimesDir, "java-$targetVersion")
+        val javaBin = getJavaExecutable(version)
+        val installDir = javaBin.parentFile?.parentFile ?: File(runtimesDir, "java-$version")
+        val targetVersionTag = if (version <= 17) "17" else "21-v3"
         
-        if (isJavaInstalled(targetVersion)) {
+        Log.i("JavaVersionManager", "INSTALL REQUEST: version=$version -> dir=$installDir")
+        
+        if (isJavaInstalled(version)) {
             emit(DownloadStatus.Finished(installDir))
             return@flow
         }
@@ -73,7 +73,7 @@ class JavaVersionManager @Inject constructor(
             installDir.deleteRecursively()
         }
         installDir.mkdirs()
-
+        
         emit(DownloadStatus.Started)
 
         try {
@@ -83,13 +83,15 @@ class JavaVersionManager @Inject constructor(
             extractAssetLib("libandroid-spawn_0.3_aarch64.deb", installDir)
 
             // 2. Extract JDK from Assets (Select based on version)
-            val jdkAssetName = if (targetVersion == 21) {
+            val jdkAssetName = if (version > 17) {
                 "openjdk-21_21.0.10_aarch64.deb"
             } else {
                 "openjdk-17_17.0.17-1_aarch64.deb"
             }
             
-            val jdkDeb = File(cacheDir, "jdk-$targetVersion.deb")
+            Log.i("JavaVersionManager", "EXTRACTING JDK: $jdkAssetName to $installDir")
+            
+            val jdkDeb = File(cacheDir, "jdk-$targetVersionTag.deb")
             emit(DownloadStatus.Progress(10)) 
 
             // Copy JDK deb from assets to cache

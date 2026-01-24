@@ -36,10 +36,16 @@ class ModDetailsViewModel @Inject constructor(
     private val _project = MutableStateFlow<ModrinthProject?>(null)
     val project: StateFlow<ModrinthProject?> = _project.asStateFlow()
 
+    data class UiVersion(
+        val original: ModrinthVersion,
+        val loader: String
+    ) {
+        val id: String get() = "${original.id}_$loader"
+    }
+
     private val _allVersions = MutableStateFlow<List<ModrinthVersion>>(emptyList())
-    
-    private val _versions = MutableStateFlow<List<ModrinthVersion>>(emptyList())
-    val versions: StateFlow<List<ModrinthVersion>> = _versions.asStateFlow()
+    private val _versions = MutableStateFlow<List<UiVersion>>(emptyList())
+    val versions: StateFlow<List<UiVersion>> = _versions.asStateFlow()
 
     private val _availableGameVersions = MutableStateFlow<List<String>>(emptyList())
     val availableGameVersions: StateFlow<List<String>> = _availableGameVersions.asStateFlow()
@@ -58,6 +64,18 @@ class ModDetailsViewModel @Inject constructor(
 
     private val _downloadProgressMap = MutableStateFlow<Map<String, Float>>(emptyMap())
     val downloadProgressMap: StateFlow<Map<String, Float>> = _downloadProgressMap.asStateFlow()
+
+    // State for file selection dialog
+    data class PendingDownload(
+        val uiVersion: UiVersion,
+        val files: List<com.lzofseven.mcserver.data.model.ModrinthFile>
+    )
+    private val _pendingDownload = MutableStateFlow<PendingDownload?>(null)
+    val pendingDownload: StateFlow<PendingDownload?> = _pendingDownload.asStateFlow()
+
+    fun dismissFileSelection() {
+        _pendingDownload.value = null
+    }
 
     private val _showAlphaBeta = MutableStateFlow(false)
     val showAlphaBeta: StateFlow<Boolean> = _showAlphaBeta.asStateFlow()
@@ -155,158 +173,176 @@ class ModDetailsViewModel @Inject constructor(
         val loader = _selectedLoader.value
         val showAll = _showAlphaBeta.value
 
-        var filteredList = _allVersions.value
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            var inputList = _allVersions.value
 
-        // Filter by Game Version
-        if (selected != null) {
-            filteredList = filteredList.filter { it.gameVersions.contains(selected) }
-        }
+            // 1. Separation/Flattening: Create one entry per supported loader
+            var flattenedList = inputList.flatMap { version ->
+                version.loaders.map { l -> UiVersion(version, l) }
+            }
 
-        // Filter by Loader (NEW)
-        if (loader != null) {
-            filteredList = filteredList.filter { it.loaders.contains(loader) }
+            // 2. Filter by Game Version
+            if (selected != null) {
+                flattenedList = flattenedList.filter { it.original.gameVersions.contains(selected) }
+            }
+
+            // 3. Filter by Loader
+            if (loader != null) {
+                flattenedList = flattenedList.filter { it.loader.equals(loader, ignoreCase = true) }
+            }
+            
+            // 4. Filter by Release Type
+            if (!showAll) {
+                flattenedList = flattenedList.filter { it.original.versionType == "release" }
+            }
+            
+            _versions.value = flattenedList
         }
-        
-        // Filter by Release Type
-        if (!showAll) {
-            filteredList = filteredList.filter { it.versionType == "release" }
-        }
-        
-        _versions.value = filteredList
     }
 
-    fun downloadVersion(version: ModrinthVersion) {
+    fun downloadVersion(uiVersion: UiVersion) {
+        val version = uiVersion.original
+        val activeFilter = uiVersion.loader
         viewModelScope.launch {
             val server = serverRepository.getServerById(serverId) ?: return@launch
             val project = _project.value ?: return@launch
-            
-            val metaManager = com.lzofseven.mcserver.util.ContentMetaManager(context, server.uri ?: server.path)
 
             if (version.files.isEmpty()) {
                 _toastMessage.emit("Erro: Esta versão não possui arquivos.")
                 return@launch
             }
 
-            // Heuristic to pick the best file based on the selected loader
-            val loaderFilter = _selectedLoader.value
-            val file = if (loaderFilter != null) {
-                // If user selected a loader, prioritize files containing that name
-                version.files.find { it.filename.contains(loaderFilter, ignoreCase = true) } 
-                    ?: version.files.find { it.primary } 
-                    ?: version.files.first()
-            } else {
-                // Fallback to primary
-                version.files.find { it.primary } ?: version.files.first()
+            // If multiple files exist, show selection dialog
+            if (version.files.size > 1) {
+                _pendingDownload.value = PendingDownload(uiVersion, version.files)
+                return@launch
             }
 
-            val folderName = when {
-                project.loaders.contains("paper") || project.loaders.contains("bukkit") || project.loaders.contains("spigot") -> "plugins" // Heuristic
-                project.loaders.contains("fabric") || project.loaders.contains("forge") -> "mods"
-                else -> {
-                    // Fallback using slug or known content types could be better, but sticking to existing logic
-                    // Actually ModrinthProject doesn't have 'project_type' field in the model we saw?
-                    // LibraryViewModel had it from ModrinthResult.
-                    // We can infer from loaders or use a default.
-                    "mods" 
-                }
+            // Single file - download directly
+            performDownload(uiVersion, version.files.first())
+        }
+    }
+
+    fun downloadSpecificFile(uiVersion: UiVersion, file: com.lzofseven.mcserver.data.model.ModrinthFile) {
+        _pendingDownload.value = null
+        viewModelScope.launch {
+            performDownload(uiVersion, file)
+        }
+    }
+
+    private suspend fun performDownload(uiVersion: UiVersion, file: com.lzofseven.mcserver.data.model.ModrinthFile) {
+        val version = uiVersion.original
+        val activeFilter = uiVersion.loader
+        val server = serverRepository.getServerById(serverId) ?: return
+        val project = _project.value ?: return
+        val metaManager = com.lzofseven.mcserver.util.ContentMetaManager(context, server.uri ?: server.path)
+
+        // Smart Folder & Loader Decision (Metadata)
+        val effectiveLoader = activeFilter
+
+        val folderName = when {
+            effectiveLoader.contains("paper", true) || effectiveLoader.contains("bukkit", true) || effectiveLoader.contains("spigot", true) -> "plugins"
+            effectiveLoader.contains("fabric", true) || effectiveLoader.contains("forge", true) || effectiveLoader.contains("neoforge", true) -> "mods"
+            // Fallback to project loaders check if version is ambiguous
+            project.loaders.any { it.contains("fabric", true) || it.contains("forge", true) } -> "mods"
+            else -> "plugins"
+        }
+        
+        val finalFolderName = folderName
+
+        try {
+            // Download Logic
+            val request = okhttp3.Request.Builder().url(file.url).build()
+            val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                client.newCall(request).execute()
             }
-            
-            // Refined Logic based on Server Type if ambiguous
-            val finalFolderName = if (folderName == "mods" && server.type.equals("paper", true)) "plugins" else folderName
 
-            try {
-                // Download Logic
-                val request = okhttp3.Request.Builder().url(file.url).build()
-                val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    client.newCall(request).execute()
-                }
+            if (response.isSuccessful) {
+                val body = response.body ?: throw Exception("Body is null")
+                val totalBytes = body.contentLength()
+                var bytesDownloaded = 0L
 
-                if (response.isSuccessful) {
-                    val body = response.body ?: throw Exception("Body is null")
-                    val totalBytes = body.contentLength()
-                    var bytesDownloaded = 0L
-
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        // Check if we should use SAF
-                        if (server.uri != null) {
-                            val rootUri = android.net.Uri.parse(server.uri)
-                            val rootDoc = DocumentFile.fromTreeUri(context, rootUri)
-                            if (rootDoc != null && rootDoc.exists()) {
-                                var targetFolderDoc = rootDoc.findFile(finalFolderName)
-                                if (targetFolderDoc == null || !targetFolderDoc.isDirectory) {
-                                    targetFolderDoc = rootDoc.createDirectory(finalFolderName)
-                                }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    // Check if we should use SAF
+                    if (server.uri != null) {
+                        val rootUri = android.net.Uri.parse(server.uri)
+                        val rootDoc = DocumentFile.fromTreeUri(context, rootUri)
+                        if (rootDoc != null && rootDoc.exists()) {
+                            var targetFolderDoc = rootDoc.findFile(finalFolderName)
+                            if (targetFolderDoc == null || !targetFolderDoc.isDirectory) {
+                                targetFolderDoc = rootDoc.createDirectory(finalFolderName)
+                            }
+                            
+                            if (targetFolderDoc != null) {
+                                // Delete if exists
+                                targetFolderDoc.findFile(file.filename)?.delete()
+                                val newFileDoc = targetFolderDoc.createFile("application/java-archive", file.filename)
                                 
-                                if (targetFolderDoc != null) {
-                                    // Delete if exists
-                                    targetFolderDoc.findFile(file.filename)?.delete()
-                                    val newFileDoc = targetFolderDoc.createFile("application/java-archive", file.filename)
-                                    
-                                    newFileDoc?.let { doc ->
-                                        context.contentResolver.openOutputStream(doc.uri)?.use { output ->
-                                            val buffer = ByteArray(8192)
-                                            var bytesRead: Int
-                                            val inputStream = body.byteStream()
-                                            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                                                output.write(buffer, 0, bytesRead)
-                                                bytesDownloaded += bytesRead
-                                                if (totalBytes > 0) {
-                                                    val progress = bytesDownloaded.toFloat() / totalBytes.toFloat()
-                                                    _downloadProgressMap.value = _downloadProgressMap.value.toMutableMap().apply {
-                                                        put(version.id, progress)
-                                                    }
+                                newFileDoc?.let { doc ->
+                                    context.contentResolver.openOutputStream(doc.uri)?.use { output ->
+                                        val buffer = ByteArray(8192)
+                                        var bytesRead: Int
+                                        val inputStream = body.byteStream()
+                                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                            output.write(buffer, 0, bytesRead)
+                                            bytesDownloaded += bytesRead
+                                            if (totalBytes > 0) {
+                                                val progress = bytesDownloaded.toFloat() / totalBytes.toFloat()
+                                                _downloadProgressMap.value = _downloadProgressMap.value.toMutableMap().apply {
+                                                    put(version.id, progress)
                                                 }
                                             }
                                         }
-                                    } ?: throw Exception("Falha ao criar arquivo via SAF")
-                                } else throw Exception("Falha ao acessar pasta $finalFolderName via SAF")
-                            } else throw Exception("URI do servidor inválida ou inacessível")
-                        } else {
-                            // Direct File Fallback
-                            val targetDir = java.io.File(server.path, finalFolderName)
-                            if (!targetDir.exists()) targetDir.mkdirs()
-                            val targetFile = java.io.File(targetDir, file.filename)
-                            
-                            java.io.FileOutputStream(targetFile).use { output ->
-                                val buffer = ByteArray(8192)
-                                var bytesRead: Int
-                                val inputStream = body.byteStream()
-                                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                                    output.write(buffer, 0, bytesRead)
-                                    bytesDownloaded += bytesRead
-                                    if (totalBytes > 0) {
-                                        val progress = bytesDownloaded.toFloat() / totalBytes.toFloat()
-                                        _downloadProgressMap.value = _downloadProgressMap.value.toMutableMap().apply {
-                                            put(version.id, progress)
-                                        }
+                                    }
+                                } ?: throw Exception("Falha ao criar arquivo via SAF")
+                            } else throw Exception("Falha ao acessar pasta $finalFolderName via SAF")
+                        } else throw Exception("URI do servidor inválida ou inacessível")
+                    } else {
+                        // Direct File Fallback
+                        val targetDir = java.io.File(server.path, finalFolderName)
+                        if (!targetDir.exists()) targetDir.mkdirs()
+                        val targetFile = java.io.File(targetDir, file.filename)
+                        
+                        java.io.FileOutputStream(targetFile).use { output ->
+                            val buffer = ByteArray(8192)
+                            var bytesRead: Int
+                            val inputStream = body.byteStream()
+                            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                output.write(buffer, 0, bytesRead)
+                                bytesDownloaded += bytesRead
+                                if (totalBytes > 0) {
+                                    val progress = bytesDownloaded.toFloat() / totalBytes.toFloat()
+                                    _downloadProgressMap.value = _downloadProgressMap.value.toMutableMap().apply {
+                                        put(version.id, progress)
                                     }
                                 }
                             }
                         }
                     }
-                    _downloadProgressMap.value = _downloadProgressMap.value.toMutableMap().apply {
-                        remove(version.id)
-                    }
-                    
-                    // Save Metadata
-                    metaManager.saveMetadata(
-                        com.lzofseven.mcserver.util.ContentMetadata(
-                            projectId = project.id,
-                            title = project.title,
-                            iconUrl = project.iconUrl,
-                            version = version.versionNumber,
-                            projectType = if (finalFolderName == "plugins") "plugin" else "mod",
-                            filename = file.filename
-                        )
-                    )
-                    
-                    _toastMessage.emit("Download concluído: ${file.filename}")
-                } else {
-                    _toastMessage.emit("Erro no download: ${response.code}")
                 }
-            } catch (e: Exception) {
-                _toastMessage.emit("Falha: ${e.message}")
+                _downloadProgressMap.value = _downloadProgressMap.value.toMutableMap().apply {
+                    remove(version.id)
+                }
+                
+                // Save Metadata
+                metaManager.saveMetadata(
+                    com.lzofseven.mcserver.util.ContentMetadata(
+                        projectId = project.id,
+                        title = project.title,
+                        iconUrl = project.iconUrl,
+                        version = version.versionNumber,
+                        projectType = if (finalFolderName == "plugins") "plugin" else "mod",
+                        filename = file.filename,
+                        loader = effectiveLoader
+                    )
+                )
+                
+                _toastMessage.emit("Download concluído: ${file.filename}")
+            } else {
+                _toastMessage.emit("Erro no download: ${response.code}")
             }
+        } catch (e: Exception) {
+            _toastMessage.emit("Falha: ${e.message}")
         }
     }
 }

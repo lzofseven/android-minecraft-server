@@ -51,6 +51,8 @@ fun DashboardScreen(
     val showPermissionDialog by viewModel.showPermissionDialog.collectAsState()
     val showRamDialog by viewModel.showRamDialog.collectAsState()
     val ramInfo by viewModel.ramInfo.collectAsState()
+    val serverIconPath by viewModel.serverIconPath.collectAsState()
+    val serverIconUpdate by viewModel.serverIconUpdate.collectAsState()
     
     val context = androidx.compose.ui.platform.LocalContext.current
     val folderPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -138,7 +140,8 @@ fun DashboardScreen(
                             onToggle = { viewModel.toggleServer() },
                             serverName = serverEntity?.name ?: "Server",
                             motd = motd,
-                            serverIconPath = viewModel.serverIconPath.collectAsState().value
+                            serverIconPath = serverIconPath,
+                            iconUpdate = serverIconUpdate
                         )
                     }
 
@@ -272,7 +275,7 @@ fun HeaderButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick:
 }
 
 @Composable
-fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName: String, motd: String, serverIconPath: String?) {
+fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName: String, motd: String, serverIconPath: String?, iconUpdate: Long = 0L) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(24.dp)),
         colors = CardDefaults.cardColors(containerColor = SurfaceDark),
@@ -280,8 +283,16 @@ fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName:
     ) {
         Column {
             Box(modifier = Modifier.fillMaxWidth().aspectRatio(1.77f)) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val imageModel = remember(serverIconPath, iconUpdate) {
+                    coil.request.ImageRequest.Builder(context)
+                        .data(serverIconPath)
+                        .setParameter("update", iconUpdate)
+                        .build()
+                }
+
                 AsyncImage(
-                    model = serverIconPath ?: "https://lh3.googleusercontent.com/aida-public/AB6AXuCwfrVy1tVAb2P64nfILPuylYzDWefOwHF251qSRzEp0xrLw1zRuRyS1TwbUVGstZ7Hd1h2lbIWTmme9atM1kDq7MA2HuNRk_yVkIXPkN8VK6On77IKdxXB2_HoP2CAXvSMbAAMV_Q_ixgnlis_A-slL40GFyzmbuW1fEzujtubzwlNfDK6OeB8ZUzFj6yTwMyXVU2ii1r9OgmjVTSm1WxffLOFkgNmowvuLCfRgynW10vEv7kq7F42ttsHnsnXYjJtlLUCJYlNBi_p",
+                    model = if (serverIconPath == null) "https://lh3.googleusercontent.com/aida-public/AB6AXuCwfrVy1tVAb2P64nfILPuylYzDWefOwHF251qSRzEp0xrLw1zRuRyS1TwbUVGstZ7Hd1h2lbIWTmme9atM1kDq7MA2HuNRk_yVkIXPkN8VK6On77IKdxXB2_HoP2CAXvSMbAAMV_Q_ixgnlis_A-slL40GFyzmbuW1fEzujtubzwlNfDK6OeB8ZUzFj6yTwMyXVU2ii1r9OgmjVTSm1WxffLOFkgNmowvuLCfRgynW10vEv7kq7F42ttsHnsnXYjJtlLUCJYlNBi_p" else imageModel,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -307,8 +318,11 @@ fun HeroStatusCard(serverStatus: ServerStatus, onToggle: () -> Unit, serverName:
             
             Column(modifier = Modifier.padding(24.dp)) {
                 Text("Status do Mundo", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, color = Color.White)
+                val annotatedMotd = remember(motd) { 
+                    com.lzofseven.mcserver.util.MotdUtils.parseMinecraftColors(motd)
+                }
                 Text(
-                    text = com.lzofseven.mcserver.util.MotdUtils.parseMinecraftColors(motd), 
+                    text = annotatedMotd, 
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
@@ -368,6 +382,11 @@ fun PerformanceStatsSection(
     ramLimitGb: Double,
     onRamClick: () -> Unit
 ) {
+    val cpuHistory = remember(statsHistory) { statsHistory.map { it.cpu.toFloat() / 100f } }
+    val ramHistory = remember(statsHistory, ramLimitGb) { 
+        statsHistory.map { (it.ram / ramLimitGb).toFloat().coerceIn(0f, 1f) } 
+    }
+
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("DESEMPENHO EM TEMPO REAL", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f), fontWeight = FontWeight.Black, letterSpacing = 2.sp)
@@ -382,7 +401,7 @@ fun PerformanceStatsSection(
                 unit = "%",
                 icon = Icons.Default.Memory,
                 color = Color(0xFF42A5F5), // Blue
-                history = statsHistory.map { it.cpu.toFloat() / 100f },
+                history = cpuHistory,
                 serverStatus = serverStatus,
                 modifier = Modifier.weight(1f)
             )
@@ -392,7 +411,7 @@ fun PerformanceStatsSection(
                 unit = "/${String.format("%.1f", ramLimitGb)}GB",
                 icon = Icons.Default.Storage,
                 color = Color(0xFFAB47BC), // Purple
-                history = statsHistory.map { (it.ram / ramLimitGb).toFloat().coerceIn(0f, 1f) },
+                history = ramHistory,
                 serverStatus = serverStatus,
                 modifier = Modifier.weight(1f),
                 onClick = onRamClick
@@ -447,6 +466,9 @@ fun StatCardWithGraph(
 
 @Composable
 fun HardwareGraph(history: List<Float>, color: Color, modifier: Modifier = Modifier) {
+    val path = remember { androidx.compose.ui.graphics.Path() }
+    val fillPath = remember { androidx.compose.ui.graphics.Path() }
+    
     Canvas(modifier = modifier) {
         if (history.size < 2) return@Canvas
         
@@ -454,8 +476,8 @@ fun HardwareGraph(history: List<Float>, color: Color, modifier: Modifier = Modif
         val height = size.height
         val spacing = width / 29f // Max 30 points
         
-        val path = androidx.compose.ui.graphics.Path()
-        val fillPath = androidx.compose.ui.graphics.Path()
+        path.reset()
+        fillPath.reset()
         
         history.forEachIndexed { index, value ->
             val x = index * spacing
@@ -613,10 +635,12 @@ fun HeartbeatGraph(color: Color, usage: Double, modifier: Modifier) {
         )
     )
 
+    val path = remember { androidx.compose.ui.graphics.Path() }
+
     androidx.compose.foundation.Canvas(modifier = modifier) {
         val width = size.width
         val height = size.height
-        val path = androidx.compose.ui.graphics.Path()
+        path.reset()
         
         val points = 50 // More points for smoother curve
         val step = width / points
@@ -683,6 +707,13 @@ fun QuickToolsSection(navController: NavController, serverId: String, viewModel:
         Spacer(Modifier.height(12.dp))
         
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ToolButton(
+                title = "Builder Bot AI",
+                desc = "Construa e gerencie com IA",
+                icon = Icons.Default.AutoAwesome,
+                color = Color(0xFFFFD700),
+                onClick = { navController.navigate(Screen.AiChat.createRoute(serverId)) }
+            )
             ToolButton(
                 title = "Gerenciar Servidor",
                 desc = "Propriedades e Configurações",
@@ -777,11 +808,14 @@ fun ToolButton(title: String, desc: String, icon: androidx.compose.ui.graphics.v
 
 @Composable
 fun ConsoleLogLine(time: String, msg: String) {
+    val annotatedMsg = remember(msg) { 
+        com.lzofseven.mcserver.util.MotdUtils.parseMinecraftColors(msg) 
+    }
     Row {
         Text(time, color = PrimaryDark, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(8.dp))
         Text(
-            text = com.lzofseven.mcserver.util.MotdUtils.parseMinecraftColors(msg),
+            text = annotatedMsg,
             style = MaterialTheme.typography.labelSmall
         )
     }

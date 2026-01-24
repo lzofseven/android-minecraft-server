@@ -21,6 +21,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
@@ -46,22 +47,27 @@ fun ServerListScreen(
     val icons by viewModel.icons.collectAsState()
 
     Box(modifier = Modifier.fillMaxSize().background(BackgroundDarkV2)) {
-        // Pixel Background Effect (Simulated)
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val size = 20.dp.toPx()
-            for (x in 0..this.size.width.toInt() step size.toInt()) {
+        // Pixel Background Effect (Static Cached Layer)
+        val gridColor = Color.White.copy(alpha = 0.02f)
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer()
+        ) {
+            val gridSize = 20.dp.toPx()
+            for (x in 0..size.width.toInt() step gridSize.toInt()) {
                 drawLine(
-                    color = Color.White.copy(alpha = 0.02f),
+                    color = gridColor,
                     start = Offset(x.toFloat(), 0f),
-                    end = Offset(x.toFloat(), this.size.height),
+                    end = Offset(x.toFloat(), size.height),
                     strokeWidth = 1f
                 )
             }
-            for (y in 0..this.size.height.toInt() step size.toInt()) {
+            for (y in 0..size.height.toInt() step gridSize.toInt()) {
                 drawLine(
-                    color = Color.White.copy(alpha = 0.02f),
+                    color = gridColor,
                     start = Offset(0f, y.toFloat()),
-                    end = Offset(this.size.width, y.toFloat()),
+                    end = Offset(size.width, y.toFloat()),
                     strokeWidth = 1f
                 )
             }
@@ -296,8 +302,11 @@ fun ServerItemCardV2(server: MCServerEntity, motd: String, icon: android.graphic
                     ServerChipV2("${server.ramAllocationMB / 1024}GB", Color.Transparent, Icons.Rounded.Memory)
                 }
                 
+                val annotatedMotd = remember(motd) {
+                    com.lzofseven.mcserver.util.MotdUtils.parseMinecraftColors(motd)
+                }
                 Text(
-                    text = com.lzofseven.mcserver.util.MotdUtils.parseMinecraftColors(motd),
+                    text = annotatedMotd,
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

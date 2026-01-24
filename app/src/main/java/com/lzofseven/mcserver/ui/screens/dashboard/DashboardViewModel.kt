@@ -79,6 +79,9 @@ class DashboardViewModel @Inject constructor(
     
     private val _serverIconPath = MutableStateFlow<String?>(null)
     val serverIconPath: StateFlow<String?> = _serverIconPath.asStateFlow()
+
+    private val _serverIconUpdate = MutableStateFlow(0L)
+    val serverIconUpdate: StateFlow<Long> = _serverIconUpdate.asStateFlow()
     
     val notificationsEnabled = globalSettingsManager.notificationsEnabled
 
@@ -132,24 +135,37 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun updateRamInfo() {
-        _ramInfo.value = com.lzofseven.mcserver.util.SystemInfoUtils.getRamInfo(context)
+        viewModelScope.launch {
+            val info = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.lzofseven.mcserver.util.SystemInfoUtils.getRamInfo(context)
+            }
+            _ramInfo.value = info
+        }
     }
 
     private fun loadServer() {
         viewModelScope.launch {
-            repository.allServers
-                .map { servers -> servers.find { it.id == serverId } }
+            repository.getServerByIdFlow(serverId)
+                .distinctUntilChanged()
                 .collect { server ->
+                    val oldServer = _serverEntity.value
                     _serverEntity.value = server
+                    
                     if (server != null) {
-                        // Re-init managers to reflect potential path/uri updates
-                        initializeManagers(server)
+                        // Only re-init if path/uri or java version changed
+                        if (oldServer == null || 
+                            oldServer.uri != server.uri || 
+                            oldServer.path != server.path ||
+                            oldServer.javaVersion != server.javaVersion ||
+                            oldServer.ramAllocationMB != server.ramAllocationMB) {
+                            initializeManagers(server)
+                        }
                     }
                 }
         }
     }
 
-    private fun initializeManagers(server: MCServerEntity) {
+    private suspend fun initializeManagers(server: MCServerEntity) {
         propertiesManager = ServerPropertiesManager(context, server.uri ?: server.path)
         
         refreshIcon(server)
@@ -162,31 +178,33 @@ class DashboardViewModel @Inject constructor(
     fun refreshIcon(server: MCServerEntity? = _serverEntity.value) {
         server ?: return
         viewModelScope.launch {
-            val executionDir = File(context.filesDir, "server_execution_${server.id}")
-            val execIcon = File(executionDir, "server-icon.png")
-            
-            // Priority 1: Active Execution Directory (most recent)
-            if (execIcon.exists()) {
-                _serverIconPath.value = execIcon.absolutePath
-                // Force a recomposition hack if needed by toggling a hidden state or just relying on flow
-                return@launch
-            }
-            
-            // Priority 2: Source Directory
-            val path = server.uri ?: server.path
-            if (path.startsWith("content://")) {
-                val uri = android.net.Uri.parse(path)
-                val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
-                val iconDoc = rootDoc?.findFile("server-icon.png")
-                _serverIconPath.value = iconDoc?.uri?.toString()
-            } else {
-                val iconFile = File(server.path, "server-icon.png")
-                if (iconFile.exists()) {
-                    _serverIconPath.value = iconFile.absolutePath
+            val iconPath = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val executionDir = File(context.filesDir, "server_execution_${server.id}")
+                val execIcon = File(executionDir, "server-icon.png")
+                
+                // Priority 1: Active Execution Directory (most recent)
+                if (execIcon.exists()) {
+                    return@withContext execIcon.absolutePath
+                }
+                
+                // Priority 2: Source Directory
+                val path = server.uri ?: server.path
+                if (path.startsWith("content://")) {
+                    val uri = android.net.Uri.parse(path)
+                    val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                    val iconDoc = rootDoc?.findFile("server-icon.png")
+                    iconDoc?.uri?.toString()
                 } else {
-                    _serverIconPath.value = null
+                    val iconFile = File(server.path, "server-icon.png")
+                    if (iconFile.exists()) {
+                        iconFile.absolutePath
+                    } else {
+                        null
+                    }
                 }
             }
+            _serverIconPath.value = iconPath
+            _serverIconUpdate.value = System.currentTimeMillis()
         }
     }
 
@@ -208,7 +226,7 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private fun checkEula() {
+    private suspend fun checkEula() {
         val server = _serverEntity.value ?: return
         try {
             if (!installer.isEulaAccepted(server.uri ?: server.path)) {
@@ -337,13 +355,16 @@ class DashboardViewModel @Inject constructor(
                 }
 
                 // Java Check
-                val requiredJava = McVersionUtils.getRequiredJavaVersion(server.version)
-                val isInstalled = javaVersionManager.isJavaInstalled(requiredJava)
-                log("Java $requiredJava installed: $isInstalled")
+                val userSelectedJava = server.javaVersion
+                val recommendedJava = McVersionUtils.getRequiredJavaVersion(server.version)
+                val javaToUse = if (userSelectedJava > 0) userSelectedJava else recommendedJava
+                
+                val isInstalled = javaVersionManager.isJavaInstalled(javaToUse)
+                log("Java check: userSelected=$userSelectedJava, recommended=$recommendedJava, using=$javaToUse, installed=$isInstalled")
                 
                 if (!isInstalled) {
-                    log("Starting Java installation")
-                    startJavaInstallation(requiredJava)
+                    log("Starting Java installation for version $javaToUse")
+                    startJavaInstallation(javaToUse)
                     return@launch
                 }
                 

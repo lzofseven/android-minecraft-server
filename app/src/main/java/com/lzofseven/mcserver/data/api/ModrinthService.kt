@@ -18,7 +18,8 @@ interface ModrinthService {
     suspend fun getProjectVersions(
         @retrofit2.http.Path("id") id: String,
         @Query("loaders") loaders: String? = null,
-        @Query("game_versions") gameVersions: String? = null
+        @Query("game_versions") gameVersions: String? = null,
+        @Query("limit") limit: Int = 100
     ): List<com.lzofseven.mcserver.data.model.ModrinthVersion>
 
     @retrofit2.http.GET("v2/project/{id}")
