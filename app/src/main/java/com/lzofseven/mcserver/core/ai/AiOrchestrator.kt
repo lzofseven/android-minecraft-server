@@ -8,10 +8,15 @@ import com.google.ai.client.generativeai.type.Part
 import com.google.ai.client.generativeai.type.content
 import com.lzofseven.mcserver.core.execution.RealServerManager
 import com.lzofseven.mcserver.core.network.RconClient
+import com.lzofseven.mcserver.data.local.dao.AiConstructionDao
+import com.lzofseven.mcserver.data.local.entity.AiConstructionEntity
 import com.lzofseven.mcserver.util.ServerPropertiesHelper
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,7 +26,8 @@ class AiOrchestrator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val serverManager: RealServerManager,
     private val rconClient: RconClient,
-    private val geminiClient: GeminiClient // We can still use its API Key and system prompt
+    private val geminiClient: GeminiClient,
+    private val constructionDao: AiConstructionDao // Memory persistence
 ) {
 
     // Orchestration state to be shared with UI
@@ -31,6 +37,9 @@ class AiOrchestrator @Inject constructor(
         data class FinalResponse(val text: String) : OrchestrationStep()
     }
 
+    // Map to hold persistent chat sessions per server
+    private val chatSessions = java.util.concurrent.ConcurrentHashMap<String, com.google.ai.client.generativeai.Chat>()
+
     suspend fun processUserRequest(
         text: String, 
         context: String?,
@@ -38,54 +47,69 @@ class AiOrchestrator @Inject constructor(
         worldPath: String
     ): Flow<OrchestrationStep> = flow {
         
-        val chat = geminiClient.getChat()
-        
-        emit(OrchestrationStep.LogMessage("Arquiteto planejando o blueprint..."))
-        
-        val fullMessage = if (context != null) {
-            "$text\n\n[SISTEMA: $context]"
-        } else {
-            text
-        }
-        
-        var response = chat.sendMessage(fullMessage)
-        var iterations = 0
-        val maxIterations = 10
-        
-        // Loop for Function Calling
-        while (iterations < maxIterations && response.candidates.firstOrNull()?.content?.parts?.any { it is com.google.ai.client.generativeai.type.FunctionCallPart } == true) {
-            iterations++
-            val toolResults = mutableListOf<Part>()
-            
-            val functionCalls = response.candidates.first().content.parts.filterIsInstance<com.google.ai.client.generativeai.type.FunctionCallPart>()
-            
-            for (call in functionCalls) {
-                emit(OrchestrationStep.ToolExecuting(call.name, call.args))
-                android.util.Log.d("AiOrchestrator", "======== log de depuração ======== : Starting Tool ${call.name} with args: ${call.args}")
+        try {
+            kotlinx.coroutines.withTimeout(120_000) { // 2 minute max timeout
+                emit(OrchestrationStep.LogMessage("Analisando solicitação e planejando ações..."))
                 
-                val result = executeTool(call.name, call.args, serverId, worldPath)
-                android.util.Log.d("AiOrchestrator", "======== log de depuração ======== : Tool Result for ${call.name}: $result")
+                // Retrieve existing chat or start new one
+                val existingChat = chatSessions[serverId]
                 
-                toolResults.add(com.google.ai.client.generativeai.type.FunctionResponsePart(call.name, org.json.JSONObject(mapOf("result" to result))))
-            }
-            
-            // Log for the user
-            if (iterations > 1) {
-                emit(OrchestrationStep.LogMessage("Inspetor validando e refinando (${iterations})..."))
-            }
+                val fullMessage = if (existingChat == null && context != null) {
+                     "[CONTEXTO INICIAL DO MUNDO]: $context\n\n$text"
+                } else if (context != null) {
+                     "$text"
+                } else {
+                    text
+                }
 
-            // Send back the results
-            // Send back the results (as "user" or "function" role, SDK 0.9.0 handles function responses usually as part of conversation history)
-            // We use direct Content constructor to avoid DSL issues
-            response = chat.sendMessage(com.google.ai.client.generativeai.type.Content(role = "user", parts = toolResults))
-        }
-        
-        if (iterations >= maxIterations) {
-            emit(OrchestrationStep.LogMessage("Limite de iterações atingido. Finalizando..."))
-        }
+                // Send message logic manually to keep Control
+                var currentChat = existingChat ?: geminiClient.startNewChat()
+                chatSessions[serverId] = currentChat
+                
+                var apiResponse = currentChat.sendMessage(fullMessage)
+                
+                var iterations = 0
+                val maxIterations = 10
+                
+                // Loop for Function Calling
+                while (iterations < maxIterations && apiResponse.candidates.firstOrNull()?.content?.parts?.any { it is com.google.ai.client.generativeai.type.FunctionCallPart } == true) {
+                    iterations++
+                    val toolResults = mutableListOf<Part>()
+                    
+                    val functionCalls = apiResponse.candidates.first().content.parts.filterIsInstance<com.google.ai.client.generativeai.type.FunctionCallPart>()
+                    
+                    for (call in functionCalls) {
+                        emit(OrchestrationStep.ToolExecuting(call.name, call.args))
+                        android.util.Log.d("AiOrchestrator", "======== log de depuração ======== : Starting Tool ${call.name} with args: ${call.args}")
+                        
+                        val result = executeTool(call.name, call.args, serverId, worldPath)
+                        android.util.Log.d("AiOrchestrator", "======== log de depuração ======== : Tool Result for ${call.name}: $result")
+                        
+                        toolResults.add(com.google.ai.client.generativeai.type.FunctionResponsePart(call.name, org.json.JSONObject(mapOf("result" to result))))
+                    }
+                    
+                    // Log for the user
+                    if (iterations > 1) {
+                        emit(OrchestrationStep.LogMessage("Verificando resultados (passo $iterations)..."))
+                    }
 
-        val finalResult = response.text ?: "O robô concluiu as tarefas."
-        emit(OrchestrationStep.FinalResponse(finalResult))
+                    // Send back the results
+                    apiResponse = currentChat.sendMessage(com.google.ai.client.generativeai.type.Content(role = "user", parts = toolResults))
+                }
+                
+                if (iterations >= maxIterations) {
+                    emit(OrchestrationStep.LogMessage("Limite de iterações atingido. Finalizando..."))
+                }
+
+                val finalResult = apiResponse.text ?: "O robô concluiu as tarefas."
+                emit(OrchestrationStep.FinalResponse(finalResult))
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            emit(OrchestrationStep.FinalResponse("⚠️ Tempo esgotado! A operação demorou muito e foi cancelada para evitar travamentos."))
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emit(OrchestrationStep.FinalResponse("⚠️ Ocorreu um erro interno: ${e.message}. Tente novamente."))
+        }
     }
 
     private suspend fun executeTool(name: String, args: Map<String, Any?>, serverId: String, worldPath: String): String {
@@ -118,6 +142,27 @@ class AiOrchestrator @Inject constructor(
                     val path = args["path"] as? String ?: return "Erro: path ausente"
                     val destination = args["destination"] as? String ?: return "Erro: destination ausente"
                     extractArchive(path, destination)
+                }
+                "get_player_position" -> {
+                    val playerName = args["player_name"] as? String ?: return "Erro: player_name ausente"
+                    getPlayerPosition(playerName, serverId)
+                }
+                "reload_datapack" -> {
+                    reloadDatapack(serverId)
+                }
+                "search_block_id" -> {
+                    val query = args["query"] as? String ?: return "Erro: query ausente"
+                    searchBlockId(query)
+                }
+                "save_memory" -> {
+                    val name = args["name"] as? String ?: return "Erro: name ausente"
+                    val location = args["location"] as? String
+                    val description = args["description"] as? String ?: return "Erro: description ausente"
+                    saveMemory(name, location, description, serverId)
+                }
+                "recall_memory" -> {
+                    val limit = (args["limit"] as? Number)?.toInt() ?: 5
+                    recallMemory(serverId, limit)
                 }
                 else -> "Tool não implementada: $name"
             }
@@ -362,5 +407,183 @@ class AiOrchestrator @Inject constructor(
     private fun getServerStatus(serverId: String): String {
         val running = serverManager.isServerRunning(serverId)
         return "Status: ${if (running) "Online" else "Offline"}"
+    }
+
+    private suspend fun getPlayerPosition(playerName: String, serverId: String): String {
+        return try {
+            serverManager.sendCommand(serverId, "data get entity $playerName Pos")
+            kotlinx.coroutines.delay(300)
+            val logs = getLogs(serverId)
+            // Parse: "Player has the following entity data: [0.0d, 100.0d, 0.0d]"
+            val posMatch = Regex("\\[(-?\\d+\\.\\d+)d, (-?\\d+\\.\\d+)d, (-?\\d+\\.\\d+)d\\]").find(logs)
+            posMatch?.let {
+                val x = it.groupValues[1].toDouble().toInt()
+                val y = it.groupValues[2].toDouble().toInt()
+                val z = it.groupValues[3].toDouble().toInt()
+                "Posição de $playerName: X=$x, Y=$y, Z=$z"
+            } ?: "Jogador '$playerName' não encontrado ou offline."
+        } catch (e: Exception) {
+            "Erro ao obter posição: ${e.message}"
+        }
+    }
+
+    private suspend fun reloadDatapack(serverId: String): String {
+        return try {
+            serverManager.sendCommand(serverId, "reload confirm")
+            kotlinx.coroutines.delay(500)
+            val logs = getLogs(serverId)
+            
+            // Check for common errors in logs
+            val errorPatterns = listOf("Unknown block", "Unknown item", "Failed to load function", "Error", "Whilst parsing")
+            val errors = logs.lines().filter { line -> errorPatterns.any { pattern -> line.contains(pattern, ignoreCase = true) } }
+            
+            if (errors.isNotEmpty()) {
+                "⚠️ ERROS DETECTADOS APÓS RELOAD:\n${errors.takeLast(5).joinToString("\n")}"
+            } else {
+                "✅ Reload OK. Nenhum erro de sintaxe detectado."
+            }
+        } catch (e: Exception) {
+            "Erro ao recarregar: ${e.message}"
+        }
+    }
+
+    // Block ID mapping for RAG-like functionality (Portuguese -> Minecraft ID)
+    private val blockIdMap = mapOf(
+        // Vidros coloridos
+        "vidro vermelho" to "red_stained_glass",
+        "vidro azul" to "blue_stained_glass",
+        "vidro verde" to "green_stained_glass",
+        "vidro amarelo" to "yellow_stained_glass",
+        "vidro branco" to "white_stained_glass",
+        "vidro preto" to "black_stained_glass",
+        "vidro laranja" to "orange_stained_glass",
+        "vidro rosa" to "pink_stained_glass",
+        "vidro roxo" to "purple_stained_glass",
+        "vidro ciano" to "cyan_stained_glass",
+        "vidro marrom" to "brown_stained_glass",
+        "vidro cinza" to "gray_stained_glass",
+        "vidro lime" to "lime_stained_glass",
+        "vidro magenta" to "magenta_stained_glass",
+        
+        // Concretos
+        "concreto branco" to "white_concrete",
+        "concreto vermelho" to "red_concrete",
+        "concreto azul" to "blue_concrete",
+        "concreto verde" to "green_concrete",
+        "concreto amarelo" to "yellow_concrete",
+        "concreto preto" to "black_concrete",
+        "concreto laranja" to "orange_concrete",
+        "concreto rosa" to "pink_concrete",
+        "concreto roxo" to "purple_concrete",
+        "concreto ciano" to "cyan_concrete",
+        "concreto marrom" to "brown_concrete",
+        "concreto cinza" to "gray_concrete",
+        "concreto lime" to "lime_concrete",
+        "concreto magenta" to "magenta_concrete",
+        
+        // Lãs
+        "lã branca" to "white_wool",
+        "lã vermelha" to "red_wool",
+        "lã azul" to "blue_wool",
+        "lã verde" to "green_wool",
+        "lã amarela" to "yellow_wool",
+        "lã preta" to "black_wool",
+        
+        // Blocos comuns
+        "pedra" to "stone",
+        "terra" to "dirt",
+        "grama" to "grass_block",
+        "areia" to "sand",
+        "cascalho" to "gravel",
+        "madeira carvalho" to "oak_planks",
+        "madeira" to "oak_planks",
+        "tijolo" to "bricks",
+        "tijolos" to "bricks",
+        "obsidiana" to "obsidian",
+        "diamante" to "diamond_block",
+        "ouro" to "gold_block",
+        "ferro" to "iron_block",
+        "esmeralda" to "emerald_block",
+        "lapis" to "lapis_block",
+        "redstone" to "redstone_block",
+        "quartzo" to "quartz_block",
+        "glowstone" to "glowstone",
+        "lanterna do mar" to "sea_lantern",
+        "prismarinho" to "prismarine",
+        "netherrack" to "netherrack",
+        "pedra do end" to "end_stone",
+        "bedrock" to "bedrock",
+        "barreira" to "barrier",
+        "ar" to "air",
+        "água" to "water",
+        "lava" to "lava"
+    )
+
+    private fun searchBlockId(query: String): String {
+        val normalized = query.lowercase().trim()
+        
+        // Direct match
+        val directMatch = blockIdMap[normalized]
+        if (directMatch != null) {
+            return "✅ ID correto: $directMatch"
+        }
+        
+        // Partial match
+        val partialMatches = blockIdMap.entries.filter { it.key.contains(normalized) || normalized.contains(it.key) }
+        if (partialMatches.isNotEmpty()) {
+            val suggestions = partialMatches.take(3).joinToString(", ") { "${it.key} -> ${it.value}" }
+            return "🔍 Sugestões encontradas: $suggestions"
+        }
+        
+        // English fallback patterns
+        val englishPatterns = mapOf(
+            "glass" to "stained_glass (adicione cor_: red_stained_glass)",
+            "concrete" to "concrete (adicione cor_: white_concrete)",
+            "wool" to "wool (adicione cor_: blue_wool)",
+            "wood" to "oak_planks, spruce_planks, birch_planks...",
+            "stone" to "stone, cobblestone, smooth_stone..."
+        )
+        
+        val englishMatch = englishPatterns.entries.find { normalized.contains(it.key) }
+        if (englishMatch != null) {
+            return "💡 Dica: ${englishMatch.value}"
+        }
+        
+        return "❌ Bloco '$query' não encontrado. Tente: stone, dirt, oak_planks, white_concrete, red_stained_glass. Consulte: https://minecraft.wiki/w/Block"
+    }
+    private suspend fun saveMemory(name: String, location: String?, description: String, serverId: String): String {
+        return try {
+            val entity = AiConstructionEntity(
+                serverId = serverId,
+                name = name,
+                location = location ?: "Desconhecida",
+                commands = description
+            )
+            constructionDao.insert(entity)
+            "Memória salva com sucesso: '$name' ${if (location != null) "em $location" else ""}."
+        } catch (e: Exception) {
+            "Erro ao salvar memória: ${e.message}"
+        }
+    }
+
+    private suspend fun recallMemory(serverId: String, limit: Int): String {
+        return try {
+            val memories = constructionDao.getRecentByServer(serverId, limit).first()
+            if (memories.isEmpty()) {
+                "Nenhuma memória encontrada para este servidor."
+            } else {
+                val sb = StringBuilder("MEMÓRIAS RECENTES:\n")
+                memories.forEach { mem ->
+                    sb.append("- [${mem.name}] (${mem.location}): ${mem.commands.take(100)}${if (mem.commands.length > 100) "..." else ""}\n")
+                }
+                sb.toString()
+            }
+        } catch (e: Exception) {
+            "Erro ao recuperar memórias: ${e.message}"
+        }
+    }
+
+    fun clearSession(serverId: String) {
+        chatSessions.remove(serverId)
     }
 }

@@ -63,6 +63,46 @@ object MinecraftToolProvider {
                             Schema.str("destination", "Pasta de destino para a extração.")
                         ),
                         requiredParameters = listOf("path", "destination")
+                    ),
+                    FunctionDeclaration(
+                        name = "get_player_position",
+                        description = "Retorna a posição (X, Y, Z) de um jogador online. Use para saber onde construir.",
+                        parameters = listOf(
+                            Schema.str("player_name", "Nome do jogador.")
+                        ),
+                        requiredParameters = listOf("player_name")
+                    ),
+                    FunctionDeclaration(
+                        name = "reload_datapack",
+                        description = "Recarrega todos os datapacks e retorna se houve erros de sintaxe nos logs. SEMPRE use após criar/editar arquivos .mcfunction.",
+                        parameters = emptyList(),
+                        requiredParameters = emptyList()
+                    ),
+                    FunctionDeclaration(
+                        name = "search_block_id",
+                        description = "Busca o ID correto de um bloco no Minecraft. Use quando não tiver certeza do nome exato (ex: 'vidro vermelho' -> 'red_stained_glass').",
+                        parameters = listOf(
+                            Schema.str("query", "Nome aproximado do bloco em português ou inglês.")
+                        ),
+                        requiredParameters = listOf("query")
+                    ),
+                    FunctionDeclaration(
+                        name = "save_memory",
+                        description = "Salva na memória uma construção ou informação importante para lembrar depois. Use SEMPRE após criar algo significativo (casas, minigames, estruturas).",
+                        parameters = listOf(
+                            Schema.str("name", "Nome descritivo da construção/memória (ex: 'Casa do jogador', 'Arena Color Run')."),
+                            Schema.str("location", "Coordenadas X, Y, Z da construção (ex: '100, 64, -200'). Opcional."),
+                            Schema.str("description", "Descrição ou comandos usados para criar a construção.")
+                        ),
+                        requiredParameters = listOf("name", "description")
+                    ),
+                    FunctionDeclaration(
+                        name = "recall_memory",
+                        description = "Recupera as memórias salvas sobre construções anteriores. Use para lembrar o que já foi feito no mundo.",
+                        parameters = listOf(
+                            Schema.int("limit", "Quantas memórias recentes retornar (padrão: 5).")
+                        ),
+                        requiredParameters = emptyList()
                     )
                 )
             )
