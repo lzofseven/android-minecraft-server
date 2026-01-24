@@ -600,13 +600,16 @@ fun ChatInput(onSend: (String) -> Unit, isLoading: Boolean, externalText: String
         shape = RoundedCornerShape(32.dp),
         shadowElevation = 8.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(0.1f)),
-        modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 16.dp, vertical = 4.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp, max = 200.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
         Row(
             modifier = Modifier
-                .padding(horizontal = 8.dp)
-                .fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .wrapContentHeight(),
+            verticalAlignment = Alignment.Bottom // Align button to bottom as it expands
         ) {
             TextField(
                 value = text,
@@ -624,7 +627,8 @@ fun ChatInput(onSend: (String) -> Unit, isLoading: Boolean, externalText: String
                     unfocusedTextColor = Color.White,
                     cursorColor = PrimaryDark
                 ),
-                singleLine = true
+                singleLine = false,
+                maxLines = 6
             )
             
             IconButton(
