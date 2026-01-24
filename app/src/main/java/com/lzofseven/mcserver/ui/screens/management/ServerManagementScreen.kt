@@ -117,21 +117,6 @@ fun ServerManagementScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // New Reactive Status Card
-            serverEntity?.let { server ->
-                val motdValue by viewModel.motd.collectAsState()
-                val serverIconPathValue by viewModel.serverIconPath.collectAsState()
-                val serverIconUpdateValue by viewModel.serverIconUpdate.collectAsState()
-                
-                com.lzofseven.mcserver.ui.screens.dashboard.HeroStatusCard(
-                    serverStatus = serverStatus,
-                    onToggle = { viewModel.toggleServer() },
-                    serverName = server.name,
-                    motd = motdValue,
-                    serverIconPath = serverIconPathValue,
-                    iconUpdate = serverIconUpdateValue
-                )
-            }
 
             // Server Icon Section
             ManagementSection(title = "ÍCONE DO SERVIDOR", icon = Icons.Default.Public) {
