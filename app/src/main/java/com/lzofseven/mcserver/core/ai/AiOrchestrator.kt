@@ -132,10 +132,12 @@ class AiOrchestrator @Inject constructor(
             emit(OrchestrationStep.FinalResponse("⚠️ Tempo esgotado! A operação demorou muito e foi cancelada para evitar travamentos."))
         } catch (e: Exception) {
             e.printStackTrace()
+            // If it's a "parts" error, it often means the model output was truncated or blocked.
+            // We can try to frame it as a retriable error or just inform the user to be more specific.
             val errorMessage = if (e.message?.contains("deserialize", ignoreCase = true) == true || e.message?.contains("parts", ignoreCase = true) == true) {
-                "⚠️ Erro de Resposta: O Arquiteto tentou gerar algo que foi bloqueado pelos filtros de segurança (ex: uso de TNT/Lava) ou o formato do modelo falhou. Tente simplificar o pedido."
+                "⚠️ Alerta Crítico: O filtro de segurança ou o formato da resposta bloqueou a geração. Tente pedir algo menor ou mais específico."
             } else {
-                "⚠️ Ocorreu um erro interno: ${e.message}. Tente novamente."
+                "⚠️ Erro Interno: ${e.message}. Tente novamente."
             }
             emit(OrchestrationStep.FinalResponse(errorMessage))
         }
