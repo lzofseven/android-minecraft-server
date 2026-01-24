@@ -83,16 +83,20 @@ fun DashboardScreen(
         )
     }
 
-    if (showRamDialog && ramInfo != null) {
-        RamInfoModal(
-            ramInfo = ramInfo!!,
-            allocatedMB = serverEntity?.ramAllocationMB ?: 0,
-            onDismiss = { viewModel.closeRamDialog() },
-            onAdjustClick = { 
-                viewModel.closeRamDialog()
-                navController.navigate(Screen.Config.createRoute(serverEntity!!.id))
-            }
-        )
+    if (showRamDialog) {
+        ramInfo?.let { info ->
+            RamInfoModal(
+                ramInfo = info,
+                allocatedMB = serverEntity?.ramAllocationMB ?: 0,
+                onDismiss = { viewModel.closeRamDialog() },
+                onAdjustClick = { 
+                    viewModel.closeRamDialog()
+                    serverEntity?.id?.let { id ->
+                        navController.navigate(Screen.Config.createRoute(id))
+                    }
+                }
+            )
+        }
     }
 
     // Auto-navigation to Console
@@ -111,29 +115,31 @@ fun DashboardScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
-                    contentPadding = PaddingValues(bottom = 120.dp), // Space for floating nav
+                    contentPadding = PaddingValues(bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
                     // Header
-                    item {
-                        val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
-                        DashboardHeader(
-                            server = serverEntity!!, 
-                            onlinePlayers = onlinePlayers, 
-                            notificationsEnabled = notificationsEnabled,
-                            onToggleNotifications = { viewModel.setNotificationsEnabled(it) }
-                        )
+                    serverEntity?.let { entity ->
+                        item(key = "header_${entity.id}") {
+                            val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
+                            DashboardHeader(
+                                server = entity, 
+                                onlinePlayers = onlinePlayers, 
+                                notificationsEnabled = notificationsEnabled,
+                                onToggleNotifications = { viewModel.setNotificationsEnabled(it) }
+                            )
+                        }
                     }
 
                     // Installation Progress
-                    if (downloadProgress != null) {
-                        item {
-                            InstallationProgressCard(progress = downloadProgress!!)
+                    downloadProgress?.let { progress ->
+                        item(key = "install_progress") {
+                            InstallationProgressCard(progress = progress)
                         }
                     }
 
                     // Hero Card (Status Mundo)
-                    item {
+                    item(key = "hero_card") {
                         val motd = properties["motd"] ?: "A Minecraft Server"
                         HeroStatusCard(
                             serverStatus = serverStatus,
@@ -146,12 +152,11 @@ fun DashboardScreen(
                     }
 
                     // Playit.gg Status
-                    item {
+                    item(key = "playit_status") {
                         val playitStatus by viewModel.playitStatus.collectAsState()
                         val claimLink by viewModel.playitClaimLink.collectAsState()
                         val playitAddress by viewModel.playitAddress.collectAsState()
                         
-                        // Always show if it's not stopped, OR if we have a claim link/address
                         if (playitStatus != "Stopped" || claimLink != null || playitAddress != null) {
                             PlayitStatusCard(
                                 status = playitStatus, 
@@ -162,7 +167,7 @@ fun DashboardScreen(
                     }
 
                     // Real-time Stats
-                    item {
+                    item(key = "performance_stats") {
                         PerformanceStatsSection(
                             serverStats = serverStats,
                             statsHistory = statsHistory,
@@ -173,16 +178,18 @@ fun DashboardScreen(
                     }
 
                     // Quick Tools
-                    item {
-                        QuickToolsSection(navController, serverEntity!!.id)
+                    serverEntity?.id?.let { id ->
+                        item(key = "quick_tools") {
+                            QuickToolsSection(navController, id)
+                        }
                     }
 
                     // Recent Logs (Mini Console)
-                    item {
+                    item(key = "mini_console") {
                         MiniConsoleSection(
                             logs = consoleLogs,
                             serverStatus = serverStatus,
-                            onSeeConsole = { navController.navigate(Screen.Console.createRoute(serverEntity!!.id)) },
+                            onSeeConsole = { navController.navigate(Screen.Console.createRoute(serverEntity?.id ?: "")) },
                             onStartServer = { viewModel.toggleServer() }
                         )
                     }
@@ -193,7 +200,9 @@ fun DashboardScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.BottomCenter
             ) {
-                GlassBottomNav(navController, serverEntity!!.id)
+                serverEntity?.id?.let { id ->
+                    GlassBottomNav(navController, id)
+                }
             }
         } else {
              Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -215,7 +224,9 @@ fun DashboardHeader(
     // User requested: "Green only if I am on server". Assuming user is "Steve" or similar for now, 
     // but better to just show "Offline" if list is empty or generic "X Players".
     
-    val isOnline = onlinePlayers.isNotEmpty() // Simple logic: if anyone is there, it's active. Refine later with Auth.
+    val isOnline by remember(onlinePlayers) {
+        derivedStateOf { onlinePlayers.isNotEmpty() }
+    }
     
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
@@ -382,9 +393,23 @@ fun PerformanceStatsSection(
     ramLimitGb: Double,
     onRamClick: () -> Unit
 ) {
-    val cpuHistory = remember(statsHistory) { statsHistory.map { it.cpu.toFloat() / 100f } }
+    val cpuHistory = remember(statsHistory) { 
+        statsHistory.map { it.cpu.toFloat() / 100f } 
+    }
     val ramHistory = remember(statsHistory, ramLimitGb) { 
         statsHistory.map { (it.ram / ramLimitGb).toFloat().coerceIn(0f, 1f) } 
+    }
+
+    val ramLimitText by remember(ramLimitGb) {
+        derivedStateOf { String.format("%.1f", ramLimitGb) }
+    }
+    
+    val cpuValueText by remember(serverStats.cpu) {
+        derivedStateOf { String.format("%.1f", serverStats.cpu) }
+    }
+    
+    val ramValueText by remember(serverStats.ram) {
+        derivedStateOf { String.format("%.1f", serverStats.ram) }
     }
 
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
@@ -397,7 +422,7 @@ fun PerformanceStatsSection(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             StatCardWithGraph(
                 title = "Processador",
-                value = String.format("%.1f", serverStats.cpu),
+                value = cpuValueText,
                 unit = "%",
                 icon = Icons.Default.Memory,
                 color = Color(0xFF42A5F5), // Blue
@@ -407,8 +432,8 @@ fun PerformanceStatsSection(
             )
             StatCardWithGraph(
                 title = "Memória RAM",
-                value = String.format("%.1f", serverStats.ram),
-                unit = "/${String.format("%.1f", ramLimitGb)}GB",
+                value = ramValueText,
+                unit = "/${ramLimitText}GB",
                 icon = Icons.Default.Storage,
                 color = Color(0xFFAB47BC), // Purple
                 history = ramHistory,

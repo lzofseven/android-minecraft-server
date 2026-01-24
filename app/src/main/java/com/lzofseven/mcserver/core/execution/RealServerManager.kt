@@ -165,13 +165,16 @@ class RealServerManager @Inject constructor(
     private fun copyDirectorySAF(source: DocumentFile, dest: File) {
         if (!dest.exists()) dest.mkdirs()
         source.listFiles().forEach { file ->
-            val destFile = File(dest, file.name!!)
-            if (file.isDirectory) {
-                copyDirectorySAF(file, destFile)
-            } else {
-                context.contentResolver.openInputStream(file.uri)?.use { input ->
-                    destFile.outputStream().use { output ->
-                        input.copyTo(output)
+            val fileName = file.name
+            if (fileName != null) {
+                val destFile = File(dest, fileName)
+                if (file.isDirectory) {
+                    copyDirectorySAF(file, destFile)
+                } else {
+                    context.contentResolver.openInputStream(file.uri)?.use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
                     }
                 }
             }
@@ -356,7 +359,7 @@ class RealServerManager @Inject constructor(
                     effectiveJarPath = if (serverPath.endsWith("/")) serverPath + "server.jar" else "$serverPath/server.jar"
                 }
             } else {
-                effectiveJarPath = File(serverDir!!, "server.jar").absolutePath
+                effectiveJarPath = serverDir?.let { File(it, "server.jar").absolutePath } ?: (if (serverPath.endsWith("/")) serverPath + "server.jar" else "$serverPath/server.jar")
             }
 
             // For execution, we use the resolved paths
