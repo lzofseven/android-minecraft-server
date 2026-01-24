@@ -12,6 +12,10 @@ class ServerRepository @Inject constructor(
 ) {
     val allServers: Flow<List<MCServerEntity>> = serverDao.getAllServers()
 
+    suspend fun getAllServersList(): List<MCServerEntity> {
+        return serverDao.getAllServersList()
+    }
+
     suspend fun getServerById(id: String): MCServerEntity? {
         return serverDao.getServerById(id)
     }

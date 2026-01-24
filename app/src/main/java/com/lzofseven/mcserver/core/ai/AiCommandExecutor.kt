@@ -5,9 +5,14 @@ import com.lzofseven.mcserver.core.execution.RealServerManager
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import androidx.documentfile.provider.DocumentFile
+import android.content.Context
+import android.net.Uri
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 @Singleton
 class AiCommandExecutor @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val serverManager: RealServerManager,
     private val rconClient: com.lzofseven.mcserver.core.network.RconClient
 ) {
@@ -45,47 +50,80 @@ class AiCommandExecutor @Inject constructor(
         rconClient: com.lzofseven.mcserver.core.network.RconClient
     ) {
         // 1. Setup Datapack Directory (Source/Persistence)
-        // TODO: Read level-name from server.properties for robustness.
-        val worldFolder = if (File(worldPath, "world").exists()) {
-            File(worldPath, "world")
-        } else if (File(worldPath, "level.dat").exists()) {
-            File(worldPath)
+        if (worldPath.startsWith("content://")) {
+            val rootDoc = DocumentFile.fromTreeUri(context, Uri.parse(worldPath))
+            val worldDoc = findWorldFolderDoc(rootDoc)
+            if (worldDoc != null) {
+                writeFunctionToSaf(worldDoc, name, content)
+            }
         } else {
-            Log.e("AiExecutor", "Could not find world folder in $worldPath")
-            throw Exception("Pasta do mundo não encontrada em: $worldPath")
+            val worldFolder = if (File(worldPath, "world").exists()) {
+                File(worldPath, "world")
+            } else if (File(worldPath, "level.dat").exists()) {
+                File(worldPath)
+            } else {
+                File(worldPath, "world") // Fallback
+            }
+            writeFunctionToFolder(worldFolder, name, content)
         }
-
-        // We write to SOURCE first (Persistence)
-        writeFunctionToFolder(worldFolder, name, content)
         
         // 2. If valid serverId, ALSO write to EXECUTION directory (Live Server)
         if (serverId != null) {
             try {
                 val executionDir = serverManager.getExecutionDirectory(serverId)
-                if (executionDir.exists()) {
-                     // The execution dir mimics the server root. So we look for "world" or "level.dat"
-                     // Assuming standard "world" folder in execution dir
-                     val execWorldFolder = File(executionDir, "world")
-                     // Or check level-name... for now assume world
-                     if (execWorldFolder.exists()) {
-                         Log.d("AiExecutor", "Writing to Live ExecutionDir: ${execWorldFolder.absolutePath}")
-                         writeFunctionToFolder(execWorldFolder, name, content)
-                     }
+                // Execution dir is ALWAYS internal storage, so we use standard File API
+                val execWorldFolder = File(executionDir, "world")
+                if (execWorldFolder.exists()) {
+                    writeFunctionToFolder(execWorldFolder, name, content)
                 }
             } catch (e: Exception) {
                 Log.w("AiExecutor", "Failed to write to execution dir", e)
-                // Don't fail the whole operation if just live sync fails, but maybe RCON will fail...
             }
         }
 
         // 4. Reload and Execute via RCON
         try {
             rconClient.sendCommand(rconConfig.password, "reload")
-            // Give a tiny beat for reload to process?
             kotlinx.coroutines.delay(500)
             rconClient.sendCommand(rconConfig.password, "function gemini:$name")
         } catch (e: Exception) {
              throw Exception("Falha ao executar RCON: ${e.message}")
+        }
+    }
+
+    private fun findWorldFolderDoc(rootDoc: DocumentFile?): DocumentFile? {
+        if (rootDoc == null) return null
+        if (rootDoc.findFile("level.dat") != null) return rootDoc
+        val worldDir = rootDoc.findFile("world")
+        if (worldDir != null && worldDir.isDirectory) return worldDir
+        return null
+    }
+
+    private fun writeFunctionToSaf(worldDoc: DocumentFile, name: String, content: String) {
+        val datapackRoot = worldDoc.findFile("datapacks")?.findFile("gemini_bot") 
+            ?: worldDoc.findFile("datapacks")?.createDirectory("gemini_bot")
+            ?: worldDoc.createDirectory("datapacks")?.createDirectory("gemini_bot")
+
+        val functionsDir = datapackRoot?.findFile("data")?.findFile("gemini")?.findFile("functions")
+            ?: datapackRoot?.findFile("data")?.findFile("gemini")?.createDirectory("functions")
+            ?: datapackRoot?.findFile("data")?.createDirectory("gemini")?.createDirectory("functions")
+            ?: datapackRoot?.createDirectory("data")?.createDirectory("gemini")?.createDirectory("functions")
+
+        val packMcmeta = datapackRoot?.findFile("pack.mcmeta") ?: datapackRoot?.createFile("application/json", "pack.mcmeta")
+        packMcmeta?.let { doc ->
+            context.contentResolver.openOutputStream(doc.uri, "wt")?.use { out ->
+                out.write("""{"pack":{"pack_format":6,"description":"Gemini Bot"}}""".toByteArray())
+            }
+        }
+
+        val safeName = name.replace(Regex("[^a-zA-Z0-9_]"), "")
+        val functionDoc = functionsDir?.findFile("$safeName.mcfunction") 
+            ?: functionsDir?.createFile("text/plain", "$safeName.mcfunction")
+
+        functionDoc?.let { doc ->
+            context.contentResolver.openOutputStream(doc.uri, "wt")?.use { out ->
+                out.write(content.toByteArray())
+            }
         }
     }
 

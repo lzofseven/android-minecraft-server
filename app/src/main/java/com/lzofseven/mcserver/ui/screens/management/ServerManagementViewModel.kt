@@ -35,7 +35,7 @@ class ServerManagementViewModel @Inject constructor(
     private val _maxPlayers = MutableStateFlow("20")
     val maxPlayers: StateFlow<String> = _maxPlayers.asStateFlow()
 
-    private val _onlineMode = MutableStateFlow(true)
+    private val _onlineMode = MutableStateFlow(false)
     val onlineMode: StateFlow<Boolean> = _onlineMode.asStateFlow()
 
     private val _gameMode = MutableStateFlow("survival")

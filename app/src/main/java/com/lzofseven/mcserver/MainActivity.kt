@@ -11,11 +11,38 @@ import androidx.compose.ui.Modifier
 import com.lzofseven.mcserver.ui.navigation.NavGraph
 import com.lzofseven.mcserver.ui.theme.AndroidMinecraftServerTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var repository: com.lzofseven.mcserver.data.repository.ServerRepository
+    @Inject lateinit var serverManager: com.lzofseven.mcserver.core.execution.RealServerManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // AutoStart Logic
+        lifecycleScope.launch {
+            try {
+                val servers = repository.getAllServersList()
+                servers.forEach { server ->
+                    if (server.autoStart) {
+                        try {
+                            android.util.Log.i("MainActivity", "Auto-starting server: ${server.name}")
+                            serverManager.startServer(server)
+                        } catch (e: Exception) {
+                            android.util.Log.e("MainActivity", "Failed to auto-start ${server.name}", e)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Error in auto-start loop", e)
+            }
+        }
+
         enableEdgeToEdge()
         setContent {
             AndroidMinecraftServerTheme {
