@@ -17,6 +17,7 @@ data class ChatMessage(
     val role: String, // "user" or "model" or "system" (for logs)
     val content: String,
     val isAction: Boolean = false,
+    val isOrchestrationLog: Boolean = false,
     val actionStatuses: Map<Int, ActionStatus> = emptyMap()
 )
 
@@ -27,6 +28,7 @@ enum class ActionStatus {
 @HiltViewModel
 class AiChatViewModel @Inject constructor(
     private val geminiClient: GeminiClient,
+    private val orchestrator: com.lzofseven.mcserver.core.ai.AiOrchestrator,
     private val commandExecutor: AiCommandExecutor,
     private val serverManager: RealServerManager,
     private val contextManager: com.lzofseven.mcserver.core.ai.AiContextManager,
@@ -56,106 +58,62 @@ class AiChatViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                // Collect the stream. MVP: Just wait for full response
-                // Logic: Flatten the flow to a single string for now or update UI progressively.
-                // For "Action" parsing, it's easier to process the full text.
-                
-                val fullResponseBuilder = StringBuilder()
-                
-                // Get Comprehensive Context (Memory + OPs + GameModes)
                 val activeServer = serverManager.getActiveServerEntity()
+                if (activeServer == null) {
+                    _errorMessage.value = "Nenhum servidor ativo selecionado."
+                    return@launch
+                }
+
+                // Fix: Decode URL characters (e.g., %20 -> space)
+                val effectivePath = if (activeServer.path.startsWith("content://")) {
+                    serverManager.getRealPathFromSaf(activeServer.path) ?: activeServer.path
+                } else {
+                    activeServer.path
+                }
+                val decodedPath = java.net.URLDecoder.decode(effectivePath, "UTF-8")
+
+                // Get Comprehensive Context (Memory + OPs + GameModes)
                 var contextStr: String? = null
                 if (activeServer != null) {
                     contextStr = contextManager.getComprehensiveContext(activeServer.id)
                 }
-                
-                geminiClient.sendMessage(text, contextStr).collect { chunk ->
-                    fullResponseBuilder.append(chunk.text)
-                }
-                
-                val fullResponse = fullResponseBuilder.toString()
-                
-                // Add AI response to chat
-                val updatedMsgs = _messages.value.toMutableList()
-                updatedMsgs.add(ChatMessage("model", fullResponse))
-                _messages.value = updatedMsgs
-                
-                // Extract and Execute Actions
-                val actions = geminiClient.extractActions(fullResponse)
-                if (actions.isNotEmpty()) {
-                    val activeServer = serverManager.getActiveServerEntity()
-                    if (activeServer != null) {
-                         // We use the path from the server entity.
-                         // For servers created with CreateServerScreen, 'path' is the directory.
-                         // But SAF Uris might be tricky. RealServerManager handles that.
-                         // For now, let's assume standard file path or non-SAF internal storage.
-                         // Implementing SAF support for file creation inside AiExecutor is out of scope for strict simple file writing
-                         // unless we pass DocumentFile. But the user said "create mcfunction file on my phone" implying direct access.
-                         // We'll pass the path string. AiExecutor logic I wrote assumes it's a File path.
-                         // If it's a content:// URI, AiExecutor logic will fail to find "world" folder with File API.
-                         // For this feature to work robustly on Android 11+ with SAF, we'd need DocumentFile logic.
-                         // However, the `path` in MCServerEntity often stores the URI string.
-                         // Let's rely on RealServerManager.getRealPathFromSaf if needed or just pass the raw path 
-                         // and hope AiExecutor's File(path) works (older Android or root/internal storage).
-                         // Given the user constraint "Create files on my *phone*", let's try our best.
-                         
-                         val effectivePath = if (activeServer.path.startsWith("content://")) {
-                             // Try to resolve real path (only works for some providers/root)
-                             // Or fail gracefully.
-                             // Attempt to delegate to a helper? 
-                             // RealServerManager has getRealPathFromSaf but it's private or public?
-                             // It is public in the outline!
-                             serverManager.getRealPathFromSaf(activeServer.path) ?: activeServer.path
-                         } else {
-                             activeServer.path
-                         }
-                         
-                         // Fix: Decode URL characters (e.g., %20 -> space) because File() expects a raw path
-                         val decodedPath = java.net.URLDecoder.decode(effectivePath, "UTF-8")
 
-                        // PRE-FLIGHT CHECK: RCON Enabled?
-                         // We check the execution directory because that's what the running server uses
-                         val executionDir = serverManager.getExecutionDirectory(activeServer.id)
-                         val rconConfig = com.lzofseven.mcserver.util.ServerPropertiesHelper.getRconConfig(executionDir.absolutePath)
-                         
-                         if (!rconConfig.enabled) {
-                             _errorMessage.value = "ERRO CRÍTICO: RCON Desativado!\n\n1. Edite server.properties\n2. Defina 'enable-rcon=true'\n3. Defina 'rcon.password'\n4. Reinicie o servidor."
-                             return@launch
-                         }
-
-                        actions.forEachIndexed { index, action ->
-                            // Update status to EXECUTING
-                            updateLastMessageStatus(index, ActionStatus.EXECUTING)
+                orchestrator.processUserRequest(text, contextStr, activeServer!!.id, decodedPath).collect { step ->
+                    when (step) {
+                        is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.LogMessage -> {
+                            // Add a system log message or update status
+                            val current = _messages.value.toMutableList()
+                            current.add(ChatMessage("system", step.message, isOrchestrationLog = true))
+                            _messages.value = current
+                        }
+                        is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.ToolExecuting -> {
+                            // Show tool execution in chat
+                            val current = _messages.value.toMutableList()
+                            current.add(ChatMessage("system", "🛠 Executando ${step.toolName}: ${step.args}", isOrchestrationLog = true))
+                            _messages.value = current
                             
-                            android.util.Log.d("AiChatViewModel", "Executing action $index: $action on path: $decodedPath via RCON:${rconConfig.port}")
-
-                            try {
-                                commandExecutor.executeAction(action, decodedPath, activeServer.id, rconConfig)
-                                
-                                // PERSISTENCE: Save successful constructions
-                                if (action is AiAction.CreateFunction) {
-                                    constructionDao.insert(
-                                        com.lzofseven.mcserver.data.local.entity.AiConstructionEntity(
-                                            serverId = activeServer.id,
-                                            name = action.name,
-                                            commands = action.content
-                                        )
-                                    )
-                                }
-
-                                // Update status to SUCCESS
-                                updateLastMessageStatus(index, ActionStatus.SUCCESS)
-                            } catch (e: Exception) {
-                                android.util.Log.e("AiChatViewModel", "Action failed", e)
-                                // Update status to ERROR (we could optionally store the error message in the map if we expanded it)
-                                updateLastMessageStatus(index, ActionStatus.ERROR)
-                                // Still show a toast or dialog for the specific error
-                                _errorMessage.value = "Erro na ação $index: ${e.message}"
+                            // FORCE CONTEXT REFRESH AFTER TOOLS (e.g. OP command)
+                            if (step.toolName == "run_command") {
+                                kotlinx.coroutines.delay(1000) // Give server time to update ops.json
+             
+                                // Re-inject updated context for next turn if still in loop (though orchestrator loop handles one turn)
+                                // Ideally, we update the ViewModel state or just rely on the next user message to pick it up.
+                                // But for multi-turn inside Orchestrator, Orchestrator itself needs to update context?
+                                // Actually, processUserRequest takes context *once*. 
+                                // For immediate effect *within* the same reasoning loop, Orchestrator needs to re-fetch?
+                                // Our current architecture passes context initially. 
+                                // If the AI Ops someone in step 1, step 2 won't know it yet unless we pass a callback or mutable context provider.
+                                // IMPORTANT: User said "after I typed /op, it didn't know".
+                                // For now, let's just ensure the NEXT user message gets fresh context.
+                                contextManager.getComprehensiveContext(activeServer!!.id) // Trigger refresh cache if any
                             }
                         }
-                    } else {
-                        // User needs to select a server
-                         _errorMessage.value = "Nenhum servidor ativo selecionado."
+                        is com.lzofseven.mcserver.core.ai.AiOrchestrator.OrchestrationStep.FinalResponse -> {
+                            // Add AI response to chat
+                            val current = _messages.value.toMutableList()
+                            current.add(ChatMessage("model", step.text))
+                            _messages.value = current
+                        }
                     }
                 }
 

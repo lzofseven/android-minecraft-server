@@ -138,5 +138,5 @@ dependencies {
     implementation("org.tukaani:xz:1.9")
     
     // Gemini AI
-    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+    implementation("com.google.ai.client.generativeai:generativeai:0.11.2")
 }

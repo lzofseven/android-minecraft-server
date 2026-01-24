@@ -186,7 +186,35 @@ fun ChatBubble(message: ChatMessage) {
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = alignment
     ) {
-        if (isSystem) {
+        if (message.isOrchestrationLog) {
+            // Specialized UI for Orchestration Steps (Planner/Coder/Debugger)
+            Surface(
+                color = Color.White.copy(alpha = 0.03f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .padding(vertical = 4.dp)
+                    .widthIn(max = 300.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryDark.copy(alpha = 0.2f))
+            ) {
+                Row(
+                   modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                   verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val icon = if (message.content.contains("🛠")) Icons.Default.Build 
+                              else if (message.content.contains("Arquiteto")) Icons.Default.AutoAwesome
+                              else Icons.Default.Terminal
+                    
+                    Icon(icon, null, tint = PrimaryDark, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        } else if (isSystem) {
+            // Traditional log message
             Text(
                 text = message.content,
                 style = MaterialTheme.typography.labelSmall,

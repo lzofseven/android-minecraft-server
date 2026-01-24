@@ -212,7 +212,10 @@ class CreateServerViewModel @Inject constructor(
                     "spawn-animals" to state.spawnAnimals.toString(),
                     "spawn-npcs" to state.spawnNpcs.toString(),
                     "generate-structures" to state.generateStructures.toString(),
-                    "allow-nether" to state.allowNether.toString()
+                    "allow-nether" to state.allowNether.toString(),
+                    "enable-rcon" to "true",
+                    "rcon.password" to "1234",
+                    "rcon.port" to "25575"
                 )
                 propsManager.save(initialProps)
 
