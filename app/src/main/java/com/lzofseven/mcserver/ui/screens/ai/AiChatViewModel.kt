@@ -29,6 +29,9 @@ class AiChatViewModel @Inject constructor(
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
     
+    private val _suggestions = MutableStateFlow<List<com.lzofseven.mcserver.core.ai.AiSuggestion>>(emptyList())
+    val suggestions: StateFlow<List<com.lzofseven.mcserver.core.ai.AiSuggestion>> = _suggestions.asStateFlow()
+
     // Track current server ID to swap histories
     private var currentServerId: String? = null
 
@@ -52,6 +55,9 @@ class AiChatViewModel @Inject constructor(
         viewModelScope.launch {
             val serverId = serverManager.getActiveServerEntity()?.id ?: return@launch
             orchestrator.addMessageToHistory(serverId, ChatMessage("user", text))
+            
+            // Refresh suggestions after sending
+            refreshSuggestions()
             
             _isLoading.value = true
             processRequest(text = text)
@@ -162,6 +168,11 @@ class AiChatViewModel @Inject constructor(
     init {
         checkRcon()
         observeHistory()
+        refreshSuggestions()
+    }
+
+    private fun refreshSuggestions() {
+        _suggestions.value = com.lzofseven.mcserver.core.ai.AiSuggestionProvider.getRandomSuggestions(6)
     }
 
     private fun observeHistory() {

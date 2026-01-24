@@ -130,6 +130,7 @@ fun AiChatScreen(
             ) {
                 val needsRconSetup by viewModel.needsRconSetup.collectAsState()
                 var pendingText by remember { mutableStateOf("") }
+                val suggestions by viewModel.suggestions.collectAsState()
                 
                 if (needsRconSetup) {
                     RconRequiredCard(
@@ -138,8 +139,11 @@ fun AiChatScreen(
                     )
                 } else {
                     Column {
-                        // Quick Suggestions
-                        QuickSuggestions(onSuggestionClick = { pendingText = it })
+                        // Quick Suggestions - Professional Bank
+                        QuickSuggestions(
+                            suggestions = suggestions,
+                            onSuggestionClick = { pendingText = it }
+                        )
                         
                         ChatInput(
                             onSend = { viewModel.sendMessage(it) },
@@ -252,10 +256,17 @@ fun ChatBubble(message: ChatMessage) {
                     
                     Column(modifier = Modifier.padding(12.dp)) {
                         if (parsedContent.text.isNotBlank()) {
-                            MarkdownText(
-                                text = parsedContent.text,
-                                color = textColor
-                            )
+                            if (!isUser && !message.isOrchestrationLog) {
+                                TypewriterText(
+                                    text = parsedContent.text,
+                                    color = textColor
+                                )
+                            } else {
+                                MarkdownText(
+                                    text = parsedContent.text,
+                                    color = textColor
+                                )
+                            }
                         }
                         
                         // If there are actions, separate them with a spacer if text exists
@@ -439,6 +450,30 @@ fun MarkdownText(text: String, color: Color, modifier: Modifier = Modifier) {
     )
 }
 
+@Composable
+fun TypewriterText(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    delayMillis: Long = 30
+) {
+    var textToDisplay by remember { mutableStateOf("") }
+    
+    LaunchedEffect(text) {
+        textToDisplay = ""
+        text.forEach { char ->
+            textToDisplay += char
+            kotlinx.coroutines.delay(delayMillis)
+        }
+    }
+
+    MarkdownText(
+        text = textToDisplay,
+        color = color,
+        modifier = modifier
+    )
+}
+
 fun parseMarkdown(text: String): androidx.compose.ui.text.AnnotatedString {
     return buildAnnotatedString {
         var currentIndex = 0
@@ -485,16 +520,10 @@ fun parseMarkdown(text: String): androidx.compose.ui.text.AnnotatedString {
 }
 
 @Composable
-fun QuickSuggestions(onSuggestionClick: (String) -> Unit) {
-    val suggestions = listOf(
-        "🏗️ Construa uma pequena base",
-        "🎮 Iniciar jogo de Spleef",
-        "📂 Listar todas as funções",
-        "🧹 Limpar a arena",
-        "🛠️ Exibir logs do servidor",
-        "🌍 Qual minha posição?"
-    )
-
+fun QuickSuggestions(
+    suggestions: List<com.lzofseven.mcserver.core.ai.AiSuggestion>,
+    onSuggestionClick: (String) -> Unit
+) {
     androidx.compose.foundation.lazy.LazyRow(
         modifier = Modifier
             .fillMaxWidth()
@@ -507,14 +536,25 @@ fun QuickSuggestions(onSuggestionClick: (String) -> Unit) {
                 color = SurfaceDark,
                 shape = RoundedCornerShape(16.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
-                modifier = Modifier.clickable { onSuggestionClick(suggestion.substring(suggestion.indexOf(" ") + 1)) }
+                modifier = Modifier.clickable { onSuggestionClick(suggestion.detailedPrompt) }
             ) {
-                Text(
-                    text = suggestion,
-                    color = Color.White.copy(alpha = 0.8f),
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = suggestion.icon,
+                        contentDescription = null,
+                        tint = PrimaryDark,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = suggestion.label,
+                        color = Color.White.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
         }
     }
