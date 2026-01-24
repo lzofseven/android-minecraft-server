@@ -47,7 +47,7 @@ class AiContextManager @Inject constructor(
             // 2. Version Detection
             val server = serverManager.getActiveServerEntity()
             if (server != null) {
-                sb.append("- Versão base detectada: 1.20.1\n") 
+                sb.append("- Versão detectada: ${server.version} (${server.type})\n") 
             }
 
             // 3. Plugins Detection
