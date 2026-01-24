@@ -8,6 +8,10 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import com.google.ai.client.generativeai.type.HarmCategory
+import com.google.ai.client.generativeai.type.BlockThreshold
+import com.google.ai.client.generativeai.type.SafetySetting
+
 @Singleton
 class GeminiClient @Inject constructor() {
     
@@ -58,13 +62,19 @@ class GeminiClient @Inject constructor() {
     """.trimIndent()
 
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-2.5-flash-lite",
+        modelName = "gemini-1.5-flash",
         apiKey = apiKey,
         systemInstruction = content { text(systemInstruction) },
         tools = MinecraftToolProvider.getMinecraftTools(),
         generationConfig = generationConfig {
-            temperature = 0.5f // Lowered for more predictable technical output
-        }
+            temperature = 0.5f 
+        },
+        safetySettings = listOf(
+            SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.NONE),
+            SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.NONE),
+            SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.NONE),
+            SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.NONE)
+        )
     )
 
     fun startNewChat() = generativeModel.startChat()

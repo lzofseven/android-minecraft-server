@@ -125,14 +125,19 @@ class AiOrchestrator @Inject constructor(
                      emit(OrchestrationStep.LogMessage("Parei para evitar loop infinito. Verifique o progresso."))
                 }
 
-                val finalResult = apiResponse.text ?: "O robô concluiu as tarefas."
+                val finalResult = try { apiResponse.text ?: "O robô concluiu as tarefas." } catch (e: Exception) { "Processamento finalizado." }
                 emit(OrchestrationStep.FinalResponse(finalResult))
             }
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             emit(OrchestrationStep.FinalResponse("⚠️ Tempo esgotado! A operação demorou muito e foi cancelada para evitar travamentos."))
         } catch (e: Exception) {
             e.printStackTrace()
-            emit(OrchestrationStep.FinalResponse("⚠️ Ocorreu um erro interno: ${e.message}. Tente novamente."))
+            val errorMessage = if (e.message?.contains("deserialize", ignoreCase = true) == true || e.message?.contains("parts", ignoreCase = true) == true) {
+                "⚠️ Erro de Resposta: O Arquiteto tentou gerar algo que foi bloqueado pelos filtros de segurança (ex: uso de TNT/Lava) ou o formato do modelo falhou. Tente simplificar o pedido."
+            } else {
+                "⚠️ Ocorreu um erro interno: ${e.message}. Tente novamente."
+            }
+            emit(OrchestrationStep.FinalResponse(errorMessage))
         }
     }
 
