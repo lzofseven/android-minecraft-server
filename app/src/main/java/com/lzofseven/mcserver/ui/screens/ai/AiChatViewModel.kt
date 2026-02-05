@@ -23,6 +23,7 @@ class AiChatViewModel @Inject constructor(
     private val commandExecutor: AiCommandExecutor,
     private val serverManager: RealServerManager,
     private val contextManager: com.lzofseven.mcserver.core.ai.AiContextManager,
+    private val apiKeyManager: com.lzofseven.mcserver.core.auth.ApiKeyManager,
     private val constructionDao: com.lzofseven.mcserver.data.local.dao.AiConstructionDao
 ) : ViewModel() {
 
@@ -40,9 +41,41 @@ class AiChatViewModel @Inject constructor(
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+    
+    // API Key State
+    val hasApiKey = MutableStateFlow(false)
+
+    init {
+        checkRcon()
+        observeHistory()
+        refreshSuggestions()
+        observeApiKey()
+    }
+    
+    private fun observeApiKey() {
+        viewModelScope.launch {
+            apiKeyManager.apiKeyFlow.collect { key ->
+                if (!key.isNullOrBlank()) {
+                    try {
+                        geminiClient.initialize(key)
+                        hasApiKey.value = true
+                    } catch (e: Exception) {
+                        hasApiKey.value = false
+                        _errorMessage.value = "Erro ao inicializar IA: ${e.message}"
+                    }
+                } else {
+                    hasApiKey.value = false
+                }
+            }
+        }
+    }
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
+        if (!hasApiKey.value) {
+             _errorMessage.value = "Configure sua Chave API nas configurações."
+             return
+        }
         if (_needsRconSetup.value) {
             _errorMessage.value = "RCON necessário para usar a IA."
             return

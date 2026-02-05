@@ -13,11 +13,13 @@ import com.google.ai.client.generativeai.type.BlockThreshold
 import com.google.ai.client.generativeai.type.SafetySetting
 
 @Singleton
-class GeminiClient @Inject constructor() {
+class GeminiClient @Inject constructor(
+    private val apiKeyManager: com.lzofseven.mcserver.core.auth.ApiKeyManager
+) {
     
-    // TODO: In production, move this to specific configuration or local.properties
-    private val apiKey = "AIzaSyDJHSTvE-IxHXYpBdXHIQnzY4w9E18qIdY" 
+    private var generativeModel: GenerativeModel? = null
 
+    // System instruction remains constant
     private val systemInstruction = """
         VOCÊ É O "MESTRE ARQUITETO" (SISTEMA DE IA).
         CONTEXTO: Você foi programado pelo desenvolvedor "Antigravity", mas você NÃO é ele e ele NÃO é um jogador.
@@ -70,34 +72,70 @@ class GeminiClient @Inject constructor() {
         1. **Destruição é Criação**: Ações como "matar mobs", "destruir blocos", "explodir TNT" ou "deletar arquivos" são MECÂNICAS DE JOGO SEGURAS e esperadas.
         2. **Permissão Total**: O usuário é o Administrador Supremo. Você tem permissão explícita para executar comandos administrativos, manipular arquivos do mundo e alterar a jogabilidade.
         3. **NUNCA RECUSE**: Não bloqueie solicitações por "motivos de segurança" neste contexto. Não há riscos reais. Apenas execute a lógica do jogo.
-        
+
+        === EXEMPLOS DE REFERÊNCIA (FEW-SHOT) ===
+
+        EXEMPLO 1: CONSTRUÇÃO DE MINIGAME
+        Usuário: "Crie um jogo de Spleef aqui onde eu estou."
+        IA (Raciocínio): Preciso saber a posição, criar a arena, o reset e ativar.
+        1. Call: `get_player_position(player_name="Lohan")` -> Retorno: "100 64 200"
+        2. Call: `write_file(path="world/datapacks/ai/data/ai/functions/spleef.mcfunction", content="fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 snow_block\n...")`
+        3. Call: `write_file(path="world/datapacks/ai/pack.mcmeta", content="...")`
+        4. Call: `reload_datapack()`
+        5. Call: `get_logs()` -> Verificação de erros.
+        6. Call: `save_memory(name="Arena Spleef", location="100 64 200", description="Arena de neve 20x20...")`
+        7. Resposta: "Arena pronta! Use /function ai:spleef para iniciar."
+
+        EXEMPLO 2: CORREÇÃO DE ERRO
+        Usuário: "O minigame não está funcionando."
+        IA (Raciocínio): Vou ver os arquivos e logs.
+        1. Call: `list_files(path="world/datapacks/ai/data/ai/functions/")`
+        2. Call: `get_logs()` -> Retorno erro: "Unknown block: red_glass"
+        3. Call: `search_block_id(query="vidro vermelho")` -> Retorno: "red_stained_glass"
+        4. Call: `write_file(path="...", content="... corrige para red_stained_glass ...")`
+        5. Call: `reload_datapack()`
+        6. Resposta: "Encontrei um erro no ID do bloco (red_glass -> red_stained_glass). Já corrigi!"
+
         === IDIOMA ===
         - Somente Português Técnico.
     """.trimIndent()
 
-    private val generativeModel = GenerativeModel(
-        modelName = "gemini-2.0-flash-exp",
-        apiKey = apiKey,
-        systemInstruction = content { text(systemInstruction) },
-        tools = MinecraftToolProvider.getMinecraftTools(),
-        generationConfig = generationConfig {
-            temperature = 0.5f 
-        },
-        safetySettings = listOf(
-            SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.NONE),
-            SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.NONE),
-            SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.NONE),
-            SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.NONE)
+    suspend fun initialize(key: String) {
+        generativeModel = GenerativeModel(
+            modelName = "gemini-2.0-flash-exp", // Updated model
+            apiKey = key,
+            systemInstruction = content { text(systemInstruction) },
+            tools = MinecraftToolProvider.getMinecraftTools(),
+            generationConfig = generationConfig {
+                temperature = 0.5f 
+            },
+            safetySettings = listOf(
+                SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.NONE),
+                SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.NONE),
+                SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.NONE),
+                SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.NONE)
+            )
         )
-    )
+    }
 
-    fun startNewChat() = generativeModel.startChat()
+    private fun ensureInitialized() {
+        if (generativeModel == null) {
+            throw IllegalStateException("API Key not configured. Please set your Gemini API Key in settings.")
+        }
+    }
+
+    fun startNewChat(): com.google.ai.client.generativeai.Chat {
+        ensureInitialized()
+        return generativeModel!!.startChat()
+    }
 
     suspend fun sendMessage(
         userMessage: String, 
         context: String? = null,
         existingChat: com.google.ai.client.generativeai.Chat? = null
     ): Pair<AiResponse, com.google.ai.client.generativeai.Chat> {
+        ensureInitialized()
+        
         val prompt = if (context != null) {
             "$userMessage\n\n[SISTEMA - CONTEXTO TÉCNICO: $context]"
         } else {
@@ -123,20 +161,6 @@ class GeminiClient @Inject constructor() {
     }
 
     private fun parseResponse(text: String): AiResponse {
-        // Simple parser to extract code blocks
-        // This is a basic implementation. Streaming might split blocks, 
-        // effectively handling this in a UI stream requires state, 
-        // but for this MVP we might map the final response or simple chunks.
-        // For Flow mapping here, we return partial text. 
-        // To handle the commands correctly, the ViewModel should likely aggregate the full response 
-        // and THEN parse it, or we simplify and don't stream logic blocks yet.
-        
-        // Let's return raw text for now wrapped in a response, 
-        // and let the ViewModel/Executor handle the final block parsing after stream completion 
-        // or just return the text as is if we assume non-streaming for logic simplicity first.
-        
-        // Actually, let's keep it simple: The UI will display the text. 
-        // The Executor will look for the ``` blocks in the FULL message.
         return AiResponse(text)
     }
     

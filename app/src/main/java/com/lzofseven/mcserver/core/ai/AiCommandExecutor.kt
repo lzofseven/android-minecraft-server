@@ -83,8 +83,20 @@ class AiCommandExecutor @Inject constructor(
 
         // 4. Reload and Execute via RCON
         try {
-            rconClient.sendCommand(rconConfig.password, "reload")
+            Log.i("AiExecutor", "Executing Double Reload Protocol...")
+            
+            // Standard reload (Works for Vanilla/Fabric/Forge)
+            val response1 = rconClient.sendCommand(rconConfig.password, "reload")
+            Log.d("AiExecutor", "Reload 1: $response1")
+            
+            kotlinx.coroutines.delay(1000)
+            
+            // Confirmation reload (Required for Paper/Spigot specifically)
+            val response2 = rconClient.sendCommand(rconConfig.password, "reload confirm")
+            Log.d("AiExecutor", "Reload 2 (Confirm): $response2")
+            
             kotlinx.coroutines.delay(500)
+            
             rconClient.sendCommand(rconConfig.password, "function gemini:$name")
         } catch (e: Exception) {
              throw Exception("Falha ao executar RCON: ${e.message}")

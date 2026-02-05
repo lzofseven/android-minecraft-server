@@ -134,5 +134,9 @@ fun NavGraph(
         ) {
             com.lzofseven.mcserver.ui.screens.ai.AiChatScreen(navController = navController)
         }
+        
+        composable("api_key_config") {
+            com.lzofseven.mcserver.ui.screens.config.ApiKeyConfigScreen(navController = navController)
+        }
     }
 }

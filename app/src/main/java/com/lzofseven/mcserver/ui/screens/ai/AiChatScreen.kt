@@ -13,12 +13,15 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -74,6 +77,11 @@ fun AiChatScreen(
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, null, tint = Color.White)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { navController.navigate("api_key_config") }) {
+                        Icon(Icons.Default.Settings, null, tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
@@ -312,6 +320,13 @@ fun ActionCard(action: AiActionUi) {
         "mcfunction" -> Icons.Filled.Build
         else -> Icons.Filled.Code
     }
+    
+    val statusColor = when(action.status) {
+        ActionStatus.SUCCESS -> Color(0xFF4CAF50)
+        ActionStatus.ERROR -> Color(0xFFEF5350)
+        ActionStatus.EXECUTING -> PrimaryDark
+        else -> Color.White.copy(0.1f)
+    }
 
     var expanded by remember { mutableStateOf(false) }
     val lineCount = action.content.lines().size
@@ -320,7 +335,7 @@ fun ActionCard(action: AiActionUi) {
     Surface(
         color = Color(0xFF1E1E1E),
         shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(0.1f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if(action.status == ActionStatus.PENDING) Color.White.copy(0.1f) else statusColor.copy(alpha = 0.5f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -349,16 +364,26 @@ fun ActionCard(action: AiActionUi) {
                 when (action.status) {
                     ActionStatus.EXECUTING -> {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
                             color = PrimaryDark
                         )
                     }
                     ActionStatus.SUCCESS -> {
-                        Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(18.dp))
+                        Surface(
+                            color = statusColor.copy(alpha = 0.2f),
+                            shape = CircleShape
+                        ) {
+                            Icon(Icons.Filled.CheckCircle, null, tint = statusColor, modifier = Modifier.size(18.dp).padding(2.dp))
+                        }
                     }
                     ActionStatus.ERROR -> {
-                        Icon(Icons.Filled.Error, null, tint = Color(0xFFEF5350), modifier = Modifier.size(18.dp))
+                        Surface(
+                             color = statusColor.copy(alpha = 0.2f),
+                             shape = CircleShape
+                         ) {
+                            Icon(Icons.Filled.Error, null, tint = statusColor, modifier = Modifier.size(18.dp).padding(2.dp))
+                        }
                     }
                     else -> {}
                 }
@@ -716,8 +741,20 @@ fun ToolExecutionCard(rawContent: String) {
     val isTool = rawContent.contains("Executando")
     val toolData = if (isTool) parseToolLogData(rawContent) else null
     
+    // Determine context (Reload, Write, etc)
+    val isReload = toolData?.args?.values?.any { it.contains("reload") } == true || toolData?.name == "reload_datapack"
+    val isWrite = toolData?.name == "write_file"
+    val isCommand = toolData?.name == "run_command"
+    
+    val primaryColor = when {
+        isReload -> Color(0xFF2196F3) // Blue for Reload
+        isWrite -> Color(0xFFFFC107) // Amber for Write
+        isCommand -> Color(0xFF4CAF50) // Green for Command
+        else -> PrimaryDark
+    }
+    
     val containerColor = if (isTool) Color(0xFF1E1E1E) else Color.Transparent
-    val borderColor = if (isTool) PrimaryDark.copy(alpha = 0.3f) else PrimaryDark.copy(alpha = 0.1f)
+    val borderColor = if (isTool) primaryColor.copy(alpha = 0.3f) else PrimaryDark.copy(alpha = 0.1f)
     
     Surface(
         color = containerColor,
@@ -732,23 +769,27 @@ fun ToolExecutionCard(rawContent: String) {
                 // Header: Icon + Tool Name
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = when(toolData.name) {
-                            "write_file" -> Icons.Default.Build
-                            "read_file", "list_files" -> Icons.Default.Terminal
-                            "run_command" -> Icons.Default.Terminal
-                            "get_logs" -> Icons.Default.Error
+                        imageVector = when {
+                            isReload -> Icons.Default.Autorenew // Needs import or use Refresh
+                            isWrite -> Icons.Default.Save // Needs import or use Edit
+                            isCommand -> Icons.Default.Terminal
                             else -> Icons.Default.Code
                         },
                         contentDescription = null,
-                        tint = PrimaryDark,
+                        tint = primaryColor,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = toolData.name.replace("_", " ").uppercase(),
+                        text = when {
+                             isReload -> "RECARREGANDO SERVIDOR"
+                             isWrite -> "ESCREVENDO CÓDIGO"
+                             isCommand -> "EXECUTANDO COMANDO"
+                             else -> toolData.name.replace("_", " ").uppercase()
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = PrimaryDark
+                        color = primaryColor
                     )
                 }
                 
@@ -757,22 +798,26 @@ fun ToolExecutionCard(rawContent: String) {
                 // Arguments List
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     toolData.args.forEach { (key, value) ->
-                        Row(verticalAlignment = Alignment.Top) {
-                            Text(
-                                text = "$key:", 
-                                style = MaterialTheme.typography.bodySmall, 
-                                color = Color.White.copy(alpha = 0.5f),
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                modifier = Modifier.width(60.dp)
-                            )
-                            Text(
-                                text = value, 
-                                style = MaterialTheme.typography.bodySmall, 
-                                color = Color.White.copy(alpha = 0.8f),
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                fontSize = 10.sp
-                            )
+                        // cleanup value for display
+                        val cleanValue = value.replace(Regex("[{}\"]"), "")
+                        if (cleanValue.isNotBlank()) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(
+                                    text = "$key:", 
+                                    style = MaterialTheme.typography.bodySmall, 
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.width(60.dp)
+                                )
+                                Text(
+                                    text = cleanValue.take(100) + if(cleanValue.length > 100) "..." else "", 
+                                    style = MaterialTheme.typography.bodySmall, 
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    fontSize = 10.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -787,7 +832,7 @@ fun ToolExecutionCard(rawContent: String) {
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = rawContent,
+                        text = rawContent.replace("🛠", "").trim(),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.7f),
                         fontStyle = FontStyle.Italic

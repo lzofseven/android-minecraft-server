@@ -178,21 +178,30 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             val iconPath = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 val executionDir = File(context.filesDir, "server_execution_${server.id}")
+                
+                // Priority 1: High-Res in Execution Directory
+                val execHighRes = File(executionDir, "server-icon-high-res.png")
+                if (execHighRes.exists()) return@withContext execHighRes.absolutePath
+
+                 // Priority 2: Standard in Execution Directory
                 val execIcon = File(executionDir, "server-icon.png")
+                if (execIcon.exists()) return@withContext execIcon.absolutePath
                 
-                // Priority 1: Active Execution Directory (most recent)
-                if (execIcon.exists()) {
-                    return@withContext execIcon.absolutePath
-                }
-                
-                // Priority 2: Source Directory
+                // Priority 3: Source Directory
                 val path = server.uri ?: server.path
                 if (path.startsWith("content://")) {
                     val uri = android.net.Uri.parse(path)
                     val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                    
+                    val highResDoc = rootDoc?.findFile("server-icon-high-res.png")
+                    if (highResDoc?.exists() == true) return@withContext highResDoc.uri.toString()
+
                     val iconDoc = rootDoc?.findFile("server-icon.png")
                     iconDoc?.uri?.toString()
                 } else {
+                    val highResFile = File(server.path, "server-icon-high-res.png")
+                    if (highResFile.exists()) return@withContext highResFile.absolutePath
+
                     val iconFile = File(server.path, "server-icon.png")
                     if (iconFile.exists()) {
                         iconFile.absolutePath

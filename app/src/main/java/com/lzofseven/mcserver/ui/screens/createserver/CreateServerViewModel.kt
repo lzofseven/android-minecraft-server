@@ -227,6 +227,14 @@ class CreateServerViewModel @Inject constructor(
                     inputStream?.close()
 
                     if (originalBitmap != null) {
+                        // 1. Save High-Res
+                        val highResFile = java.io.File(state.path, "server-icon-high-res.png")
+                        highResFile.parentFile?.mkdirs()
+                        val highResOut = java.io.FileOutputStream(highResFile)
+                        originalBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, highResOut)
+                        highResOut.close()
+
+                        // 2. Save Standard 64x64
                         val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(originalBitmap, 64, 64, true)
                         val iconFile = java.io.File(state.path, "server-icon.png")
                         iconFile.parentFile?.mkdirs()

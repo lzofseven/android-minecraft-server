@@ -480,7 +480,7 @@ class RealServerManager @Inject constructor(
             val privateJarFile = File(executionDir, "server.jar")
             
             // Files and DIRECTORIES to copy from source to execution dir
-            val stuffToCopy = listOf("server.jar", "server.properties", "eula.txt", "banned-ips.json", "banned-players.json", "ops.json", "whitelist.json", "usercache.json", "server-icon.png", "plugins", "mods")
+            val stuffToCopy = listOf("server.jar", "server.properties", "eula.txt", "banned-ips.json", "banned-players.json", "ops.json", "whitelist.json", "usercache.json", "server-icon.png", "server-icon-high-res.png", "plugins", "mods")
 
             if (serverPath.startsWith("content://")) {
                 Log.i("RealServerManager", "SAF Mode: Copying server files to private execution directory...")
